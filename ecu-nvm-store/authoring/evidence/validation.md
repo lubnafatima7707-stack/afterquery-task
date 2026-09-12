@@ -59,3 +59,36 @@ and the standard library are what is there.
     harbor run -p . -a oracle -e docker
     harbor run -p . -a nop -e docker
     harbor check . -m anthropic/claude-opus-4-8
+
+## Ablating the shipped solvers, not only the reference
+
+A previous task of mine failed its review because a reviewer switched a piece off inside the
+bundle's own independently written solver, watched it pass every bar, and concluded the advertised
+hard part was not load bearing. So the same test was run here on the second correct store, with the
+switches in its own `VARIANT` line, over the ten graded scenarios:
+
+| piece removed from `independent_store.py` | integrity violations | bars failed |
+|---|---|---|
+| record checksum | 3, and it dies outright on one scenario | completion, integrity |
+| index snapshot refreshed before a sector is reclaimed | 0 | none |
+| reading the sector back after an erase | 2 | integrity |
+| abandoning a head whose snapshot never landed | 118 | integrity |
+| acknowledging only after the page is programmed | 6 | integrity |
+
+Four of the five bite. The snapshot refresh does not, and that is reported rather than dressed up:
+reclamation copies the live records into the head as ordinary records, and the mount applies every
+record that follows the newest snapshot, so the index is repaired by the replay even when a stored
+snapshot still names a page inside the sector that was then erased. The write is kept because it
+bounds how much replay a mount has to do, but nothing in the difficulty explanation rests on it. The
+equivalent piece in the reference, the seal that makes a compaction visible only once it is
+complete, is load bearing at 429 violations.
+
+## The one bar dodge worth testing
+
+The mount bar could in principle be sidestepped by spending nothing between MOUNT and MOUNTED and
+scanning the part from inside the ticks instead, answering reads BUSY until the scan is done, since
+a read may be answered BUSY for up to eight ticks and eight ticks of budget is 16 ms, twice the
+8.0 ms mount bar. That was built as `deferred_full_scan` and measured: it records 0.000 ms of mount
+time and then fails anyway, with 1161 integrity violations from reads that never got a value and 2
+tick overruns, because a whole part is 20.5 to 41.0 ms of reads and does not fit in eight ticks of a
+2.0 ms budget either. The bar is not dodgeable by moving the work, only by not doing it.

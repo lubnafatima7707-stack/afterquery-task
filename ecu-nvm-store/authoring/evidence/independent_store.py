@@ -14,10 +14,17 @@ usable snapshot and the pages of the head sector. The crash argument is
 different too: a sector is erased only after its live records have been written
 elsewhere, and a head whose snapshot is missing is abandoned in favour of the
 previous one.
+
+VARIANT is the authoring switch, empty as shipped. Each value it accepts removes
+one piece of this design, which is how the second block of the results table was
+measured: a reviewer should not have to take on trust that the pieces of a
+shipped solver are load bearing.
 """
 import json
 import sys
 import zlib
+
+VARIANT = ""
 
 SEC_MAGIC = b"CLOG"
 SNAP_MAGIC = b"SNAP"
@@ -26,6 +33,10 @@ REC_TAG = 0x7A
 
 def crc4(data):
     return (zlib.crc32(data) & 0xFFFFFFFF).to_bytes(4, "little")
+
+
+def flags():
+    return {part.strip() for part in VARIANT.split(",") if part.strip()}
 
 
 class CircularStore:
@@ -51,6 +62,8 @@ class CircularStore:
         self.stamp = 1
         self.gens = {}
         self.job = None
+        self.off = flags()
+        self.early = set()
 
     # device -------------------------------------------------------------------
 
@@ -133,10 +146,14 @@ class CircularStore:
         if raw is None or len(raw) < 11 or raw[0] != REC_TAG:
             return None
         block, size = raw[1], raw[2]
-        if block >= len(self.lengths) or size > self.page - 11:
+        if block >= len(self.lengths):
+            return None
+        if "no_crc" in self.off:
+            size = min(size, self.page - 11)
+        elif size > self.page - 11:
             return None
         body = raw[:7 + size]
-        if crc4(body) != raw[7 + size:11 + size]:
+        if "no_crc" not in self.off and crc4(body) != raw[7 + size:11 + size]:
             return None
         return block, int.from_bytes(raw[3:7], "little"), bytes(raw[7:7 + size])
 
@@ -187,7 +204,9 @@ class CircularStore:
                         self.stamp = stamp + 1
             page += 1
         if table is None:
-            return False
+            if "no_head_fallback" not in self.off:
+                return False
+            table = {}
         self.where = table
         self.cursor = cursor
         return True
@@ -262,6 +281,9 @@ class CircularStore:
             if not self.room(self.cost_prog + self.cost_read):
                 return
             rid, block, value = self.queue[0]
+            if "ack_early" in self.off and rid not in self.early:
+                self.early.add(rid)
+                self.out.write("ACK %d\n" % rid)
             page = self.cursor
             if not self.store_page(self.head, page,
                                    self.record_page(block, self.stamp, value)):
@@ -274,7 +296,8 @@ class CircularStore:
             self.where[block] = (self.head, page, self.stamp)
             self.stamp += 1
             self.queue.pop(0)
-            self.out.write("ACK %d\n" % rid)
+            if rid not in self.early:
+                self.out.write("ACK %d\n" % rid)
 
     def maintain(self):
         """Keep one erased sector in reserve and open a new head when full."""
@@ -319,6 +342,8 @@ class CircularStore:
                 continue
             if step == "prove":
                 target = self.job["target"]
+                if "no_erase_proof" in self.off:
+                    self.job["page"] = self.n_pages
                 while self.job["page"] < self.n_pages:
                     if not self.room(self.cost_read):
                         return
@@ -394,11 +419,12 @@ class CircularStore:
             self.job = None
             self.maintain()
             return False
-        if not self.room(self.cost_prog):
-            return False
-        if not self.store_page(self.head, self.cursor, self.snapshot_page(self.where)):
-            return False
-        self.cursor += 1
+        if "no_snapshot_refresh" not in self.off:
+            if not self.room(self.cost_prog):
+                return False
+            if not self.store_page(self.head, self.cursor, self.snapshot_page(self.where)):
+                return False
+            self.cursor += 1
         self.job = {"step": "wipe", "target": victim, "after": "release"}
         return True
 

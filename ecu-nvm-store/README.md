@@ -109,7 +109,15 @@ erases per 100 writes, so the pass does not depend on one exact tuning.
 
 Each bar is the sole reason some variant fails. Dropping the record checksum, the seal, the erase
 verify or the late acknowledgement fails integrity alone, at 1 (plus a crash), 429, 31 and 49
-violations. Doing every job immediately fails the tick budget alone at 222 overruns. Scanning every
+violations. The same test was run on the independently written store rather than only on the
+reference, because a reviewer of an earlier task of mine switched a piece off inside a shipped
+solver and watched it pass: four of its five pieces bite, at 3 violations plus a crash, 2, 118 and 6,
+and the fifth, an index snapshot refreshed before a sector is reclaimed, measurably does not, which
+`authoring/evidence/validation.md` reports and explains rather than claiming as a crux. The one way
+the mount bar might have been dodged, spending nothing at MOUNT and scanning the part from inside
+the ticks while answering reads BUSY, was built and measured too: it records 0.000 ms of mount time
+and still fails, at 1161 violations from reads that never got a value and 2 tick overruns, because a
+whole part does not fit in eight ticks of a 2.0 ms budget either. Doing every job immediately fails the tick budget alone at 222 overruns. Scanning every
 sector at mount fails the mount bar alone at 28.475 ms. Compacting thirty pages early fails
 endurance alone at 9.558. Programming one record every two or every eight ticks fails the
 acknowledgement bar alone, at 54 and 764 ticks. The quick attempt of the kind written in a few

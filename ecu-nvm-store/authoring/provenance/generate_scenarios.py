@@ -143,6 +143,78 @@ def hidden_scenarios():
     ]
 
 
+def check_feasible(sc):
+    """Refuse to write a scenario the bars could not be met on.
+
+    Every one of these is a way a generated scenario could be unwinnable or
+    degenerate rather than hard, so it raises instead of warning.
+    """
+    dev = sc["device"]
+    sectors = dev["sectors"]
+    pages = dev["pages_per_sector"]
+    page_bytes = dev["page_bytes"]
+    t_read = dev["t_read_ms"]
+    t_prog = dev["t_program_ms"]
+    erase_ticks = dev["erase_ticks"]
+    limits = sc["limits"]
+    budget = limits["tick_budget_ms"]
+    mount_bar = limits["mount_budget_ms"]
+    blocks = sc["blocks"]
+    weak = {int(k) for k in (dev.get("weak_pages") or {})}
+    name = sc["name"]
+
+    def need(ok, why):
+        if not ok:
+            raise SystemExit("%s is not winnable as generated: %s" % (name, why))
+
+    # a record has to fit in a page with room for a header and a checksum
+    need(max(blocks) + 12 <= page_bytes,
+         "a %d byte block does not fit a %d byte page" % (max(blocks), page_bytes))
+    # the live set plus slack has to fit in one sector, so compacting forward is possible
+    need(pages - 2 - len(blocks) >= 24,
+         "only %d pages per sector are left for new records" % (pages - 2 - len(blocks)))
+    # and that leaves room to stay inside the erase bar with a compaction design
+    per_erase = pages - 2 - len(blocks)
+    need(100.0 / per_erase <= 0.7 * 6.0,
+         "a compaction design would need %.2f erases per 100 writes" % (100.0 / per_erase))
+    # enough sectors survive wear to keep rotating
+    need(sectors - len(weak) >= 8,
+         "only %d sectors are not worn" % (sectors - len(weak)))
+    # the mount bar has to be reachable by scanning two sectors and the headers,
+    # and has to be out of reach of scanning the whole part, or it measures nothing
+    two_sectors = 2 * pages * t_read + sectors * t_read
+    whole_part = sectors * pages * t_read
+    need(two_sectors <= 0.8 * mount_bar,
+         "scanning two sectors already costs %.2f ms of the %.1f ms mount" % (two_sectors, mount_bar))
+    need(whole_part > 1.5 * mount_bar,
+         "scanning the whole part costs only %.2f ms, so the mount bar measures nothing"
+         % whole_part)
+    # a tick has to carry several page programs
+    need(budget / t_prog >= 4.0,
+         "a tick only carries %.1f page programs" % (budget / t_prog))
+    # a compaction has to fit well inside the acknowledge bar
+    compaction = (len(blocks) * (t_read + t_prog) / budget + erase_ticks
+                  + pages * t_read / budget + 2)
+    need(compaction <= 0.5 * 35,
+         "a compaction takes %.1f ticks of the 35 tick acknowledge bar" % compaction)
+    # every block is written before the first reset, so nothing is graded on a
+    # block the workload never set
+    first_cut = min((c["after_request"] for c in sc["cuts"]), default=10 ** 9)
+    need(first_cut > len(blocks),
+         "the first reset lands at request %d, before every block has been written"
+         % first_cut)
+    # and the workload has to outlast at least one full rotation, or wear never shows
+    writes = sum(1 for r in sc["requests"] if r["kind"] == "W")
+    if weak:
+        need(writes > 1.2 * sectors * per_erase,
+             "%d writes do not bring the rotation back to a worn sector" % writes)
+    return {"name": name, "writes": writes, "per_erase": per_erase,
+            "two_sector_mount_ms": round(two_sectors, 3),
+            "whole_part_mount_ms": round(whole_part, 3),
+            "compaction_ticks": round(compaction, 1),
+            "good_sectors": sectors - len(weak)}
+
+
 def write_json(path, obj):
     with open(path, "w", newline="\n") as f:
         json.dump(obj, f, sort_keys=True, separators=(",", ":"))
@@ -157,12 +229,15 @@ def main():
     os.makedirs(hid_dir, exist_ok=True)
     record = {"dev": [], "hidden": [], "units": UNITS, "dev_device": DEV_DEVICE,
               "limits": LIMITS, "n_blocks": N_BLOCKS, "block_lengths": LENGTHS}
+    record["feasibility"] = []
     for sc in dev_scenarios():
+        record["feasibility"].append(check_feasible(sc))
         write_json(os.path.join(dev_dir, sc["name"] + ".json"), sc)
         record["dev"].append({"name": sc["name"], "seed": sc["seed"],
                               "requests": len(sc["requests"]),
                               "cuts": len(sc["cuts"])})
     for sc in hidden_scenarios():
+        record["feasibility"].append(check_feasible(sc))
         write_json(os.path.join(hid_dir, sc["name"] + ".json"), sc)
         record["hidden"].append({"name": sc["name"], "seed": sc["seed"],
                                  "requests": len(sc["requests"]),

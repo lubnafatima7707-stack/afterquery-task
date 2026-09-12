@@ -43,6 +43,8 @@ ABLATIONS = [
      "at most one record is programmed every eight ticks"),
     ("one_write_per_2_ticks", "drip=2",
      "at most one record is programmed every other tick"),
+    ("deferred_full_scan", "lazy_scan",
+     "nothing is spent at MOUNT and the whole part is scanned from inside the ticks instead, reads answered BUSY until it is done"),
 ]
 
 PERTURBATIONS = [
@@ -51,6 +53,23 @@ PERTURBATIONS = [
     ("margin_10", "margin=10"),
     ("budget_60pc", "budget_frac=0.6"),
     ("budget_80pc", "budget_frac=0.8"),
+]
+
+INDEPENDENT = os.path.join(EVIDENCE, "independent_store.py")
+
+# The same test applied to the second correct store, because a reviewer will ask
+# whether the pieces of a shipped solver are load bearing rather than decoration.
+INDEPENDENT_ABLATIONS = [
+    ("ind_no_record_checksum", "no_crc",
+     "records believed on their tag alone"),
+    ("ind_no_snapshot_refresh", "no_snapshot_refresh",
+     "the victim is erased without a fresh index snapshot, so a stored snapshot can name a reclaimed page"),
+    ("ind_no_erase_proof", "no_erase_proof",
+     "the erase is not read back, so a worn sector is taken into use"),
+    ("ind_no_head_fallback", "no_head_fallback",
+     "the newest generation is taken as the head even when its snapshot never landed"),
+    ("ind_ack_on_arrival", "ack_early",
+     "a write is acknowledged when it reaches the queue"),
 ]
 
 OTHERS = [
@@ -88,8 +107,8 @@ def run(program, cases, timeout_s=120.0):
     return metrics
 
 
-def variant_file(tmp, name, value):
-    src = open(REFERENCE).read()
+def variant_file(tmp, name, value, source=None):
+    src = open(source or REFERENCE).read()
     out = src.replace('VARIANT = ""', 'VARIANT = "%s"' % value, 1)
     if out == src:
         raise SystemExit("could not set VARIANT in the reference")
@@ -112,6 +131,9 @@ def main():
         for name, value in PERTURBATIONS:
             rows.append((name, "perturbation", "reference with " + value,
                          run(variant_file(tmp, name, value), cases)))
+        for name, value, note in INDEPENDENT_ABLATIONS:
+            rows.append((name, "independent ablation", note,
+                         run(variant_file(tmp, name, value, INDEPENDENT), cases)))
         for name, path, kind, note in OTHERS:
             rows.append((name, kind, note, run(path, cases)))
     finally:

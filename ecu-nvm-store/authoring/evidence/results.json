@@ -331,6 +331,39 @@
       "note": "at most one record is programmed every other tick"
     },
     {
+      "kind": "ablation",
+      "metrics": {
+        "acked_writes": 9756,
+        "boots": 59,
+        "by_kind": {
+          "corrupt": 0,
+          "rollback": 3,
+          "stale": 122,
+          "unanswered_read": 1036
+        },
+        "erases": 243,
+        "erases_per_100_writes": 2.491,
+        "failed_bars": [
+          "integrity_violations",
+          "tick_overruns"
+        ],
+        "failed_scenarios": {},
+        "integrity_violations": 1161,
+        "lost_writes": 64,
+        "max_ack_latency_ticks": 17,
+        "max_mount_ms": 0.0,
+        "max_read_latency_ticks": 8,
+        "max_sector_erases": 4,
+        "n_scenarios": 10,
+        "tick_overruns": 2,
+        "ticks": 35257,
+        "unacked_at_end": 0,
+        "worst_tick_ms": 2.75
+      },
+      "name": "deferred_full_scan",
+      "note": "nothing is spent at MOUNT and the whole part is scanned from inside the ticks instead, reads answered BUSY until it is done"
+    },
+    {
       "kind": "perturbation",
       "metrics": {
         "acked_writes": 9761,
@@ -479,6 +512,168 @@
       },
       "name": "budget_80pc",
       "note": "reference with budget_frac=0.8"
+    },
+    {
+      "kind": "independent ablation",
+      "metrics": {
+        "acked_writes": 8038,
+        "boots": 46,
+        "by_kind": {
+          "corrupt": 3,
+          "rollback": 0,
+          "stale": 0,
+          "unanswered_read": 0
+        },
+        "erases": 159,
+        "erases_per_100_writes": 1.978,
+        "failed_bars": [
+          "completion",
+          "integrity_violations"
+        ],
+        "failed_scenarios": {
+          "h02_a_bursts": "the program exited without finishing the tick",
+          "h05_b_resets": "the program exited without finishing the tick"
+        },
+        "integrity_violations": 3,
+        "lost_writes": 42,
+        "max_ack_latency_ticks": 12,
+        "max_mount_ms": 2.9,
+        "max_read_latency_ticks": 3,
+        "max_sector_erases": 4,
+        "n_scenarios": 8,
+        "tick_overruns": 0,
+        "ticks": 29546,
+        "unacked_at_end": 0,
+        "worst_tick_ms": 2.0
+      },
+      "name": "ind_no_record_checksum",
+      "note": "records believed on their tag alone"
+    },
+    {
+      "kind": "independent ablation",
+      "metrics": {
+        "acked_writes": 9768,
+        "boots": 59,
+        "by_kind": {
+          "corrupt": 0,
+          "rollback": 0,
+          "stale": 0,
+          "unanswered_read": 0
+        },
+        "erases": 185,
+        "erases_per_100_writes": 1.894,
+        "failed_bars": [],
+        "failed_scenarios": {},
+        "integrity_violations": 0,
+        "lost_writes": 52,
+        "max_ack_latency_ticks": 11,
+        "max_mount_ms": 2.9,
+        "max_read_latency_ticks": 3,
+        "max_sector_erases": 4,
+        "n_scenarios": 10,
+        "tick_overruns": 0,
+        "ticks": 34845,
+        "unacked_at_end": 0,
+        "worst_tick_ms": 2.0
+      },
+      "name": "ind_no_snapshot_refresh",
+      "note": "the victim is erased without a fresh index snapshot, so a stored snapshot can name a reclaimed page"
+    },
+    {
+      "kind": "independent ablation",
+      "metrics": {
+        "acked_writes": 9768,
+        "boots": 59,
+        "by_kind": {
+          "corrupt": 0,
+          "rollback": 2,
+          "stale": 0,
+          "unanswered_read": 0
+        },
+        "erases": 181,
+        "erases_per_100_writes": 1.853,
+        "failed_bars": [
+          "integrity_violations"
+        ],
+        "failed_scenarios": {},
+        "integrity_violations": 2,
+        "lost_writes": 52,
+        "max_ack_latency_ticks": 8,
+        "max_mount_ms": 2.9,
+        "max_read_latency_ticks": 3,
+        "max_sector_erases": 5,
+        "n_scenarios": 10,
+        "tick_overruns": 0,
+        "ticks": 34845,
+        "unacked_at_end": 0,
+        "worst_tick_ms": 1.875
+      },
+      "name": "ind_no_erase_proof",
+      "note": "the erase is not read back, so a worn sector is taken into use"
+    },
+    {
+      "kind": "independent ablation",
+      "metrics": {
+        "acked_writes": 9766,
+        "boots": 59,
+        "by_kind": {
+          "corrupt": 0,
+          "rollback": 118,
+          "stale": 0,
+          "unanswered_read": 0
+        },
+        "erases": 181,
+        "erases_per_100_writes": 1.853,
+        "failed_bars": [
+          "integrity_violations"
+        ],
+        "failed_scenarios": {},
+        "integrity_violations": 118,
+        "lost_writes": 54,
+        "max_ack_latency_ticks": 12,
+        "max_mount_ms": 2.9,
+        "max_read_latency_ticks": 3,
+        "max_sector_erases": 4,
+        "n_scenarios": 10,
+        "tick_overruns": 0,
+        "ticks": 34846,
+        "unacked_at_end": 0,
+        "worst_tick_ms": 2.0
+      },
+      "name": "ind_no_head_fallback",
+      "note": "the newest generation is taken as the head even when its snapshot never landed"
+    },
+    {
+      "kind": "independent ablation",
+      "metrics": {
+        "acked_writes": 9794,
+        "boots": 59,
+        "by_kind": {
+          "corrupt": 0,
+          "rollback": 6,
+          "stale": 0,
+          "unanswered_read": 0
+        },
+        "erases": 185,
+        "erases_per_100_writes": 1.889,
+        "failed_bars": [
+          "integrity_violations"
+        ],
+        "failed_scenarios": {},
+        "integrity_violations": 6,
+        "lost_writes": 26,
+        "max_ack_latency_ticks": 12,
+        "max_mount_ms": 2.9,
+        "max_read_latency_ticks": 3,
+        "max_sector_erases": 4,
+        "n_scenarios": 10,
+        "tick_overruns": 0,
+        "ticks": 34846,
+        "unacked_at_end": 0,
+        "worst_tick_ms": 2.0
+      },
+      "name": "ind_ack_on_arrival",
+      "note": "a write is acknowledged when it reaches the queue"
     },
     {
       "kind": "correct",

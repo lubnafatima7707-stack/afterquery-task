@@ -182,6 +182,14 @@ class Store:
         return None
 
     def mount(self):
+        if "lazy_scan" in self.flags:
+            # Authoring probe only: spend nothing at MOUNT and scan the whole part
+            # from inside the ticks instead, answering reads BUSY until it is done.
+            self.lazy = {"pos": 0, "pages": {},
+                         "targets": [(sector, page) for sector in range(self.S)
+                                     for page in range(self.P)]}
+            return
+        self.lazy = None
         headers = {}
         for sector in range(self.S):
             seq = self.parse_header(self._read_settled(sector, 0))
@@ -251,6 +259,11 @@ class Store:
         self.pending.append([rid, block, value])
 
     def run_tick(self, reads):
+        if getattr(self, "lazy", None) is not None:
+            for rid, _block in reads:
+                self.out.write("VALUE %d BUSY\n" % rid)
+            self._lazy_mount_tick()
+            return
         self._answer(reads)
         if "ack_early" in self.flags:
             for item in self.pending:
@@ -259,6 +272,48 @@ class Store:
                     self.out.write("ACK %d\n" % item[0])
         self._drain_writes()
         self._advance_gc()
+
+    def _lazy_mount_tick(self):
+        lazy = self.lazy
+        while lazy["pos"] < len(lazy["targets"]):
+            if not self._afford(self.t_read):
+                return
+            sector, page = lazy["targets"][lazy["pos"]]
+            data = self.read_page(sector, page)
+            if data is None:
+                return
+            lazy["pages"][(sector, page)] = data
+            lazy["pos"] += 1
+        pages = lazy["pages"]
+        headers = {}
+        for sector in range(self.S):
+            seq = self.parse_header(pages.get((sector, 0)))
+            if seq is not None:
+                headers[sector] = seq
+        self.seq = max(headers.values()) if headers else 0
+        authoritative = None
+        for sector in sorted(headers, key=lambda s: -headers[s]):
+            if self.parse_seal(pages.get((sector, 1))) == headers[sector]:
+                authoritative = sector
+                break
+        self.lazy = None
+        if authoritative is None:
+            self._mount_blank()
+            return
+        self.active = authoritative
+        for page in range(2, self.P):
+            data = pages.get((authoritative, page))
+            if self.is_erased(data):
+                self.append = page
+                break
+            record = self.parse_record(data)
+            if record is not None:
+                block, rseq, _value = record
+                held = self.index.get(block)
+                if held is None or rseq > held[2]:
+                    self.index[block] = (authoritative, page, rseq)
+                if rseq >= self.rseq:
+                    self.rseq = rseq + 1
 
     def _answer(self, reads):
         for rid, block in reads:
