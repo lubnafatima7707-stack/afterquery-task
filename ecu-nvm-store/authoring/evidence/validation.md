@@ -147,3 +147,21 @@ the account present the same commands give the same numbers as before.
 
 `authoring/evidence/bundle_checks.py` now fails if either Dockerfile stops creating the account the
 driver names, or if the driver stops degrading when it is missing.
+
+## The sweep only removes what the run created
+
+The driver ships to the agent as well as grading with it, so it runs inside a container that is not
+the verifier's, next to whatever the platform keeps there. Removing files and killing processes by
+uid alone was too blunt for that: anything already present that happened to belong to the same
+account was fair game.
+
+A snapshot of the processes and the directory entries that exist before a scenario starts is now
+taken once, and the sweep only ever removes what appeared afterwards. Tested by leaving a file owned
+by that account in `/run/lock` and a process running as it before a run: both survive, while the
+journal probe run in the same conditions still fails, at 169 rollbacks and 71 `not_on_device`
+violations over three scenarios. Every number in `results.md` is identical before and after the
+change, which is the point: the sweep is defence in depth and the grading rests on the image.
+
+A cheat could now overwrite a file that was already there rather than create one, and keep its blocks
+inside it. That still fails, because what decides a run is whether the value is in the flash image,
+not whether the file survived.

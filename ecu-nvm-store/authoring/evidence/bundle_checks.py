@@ -256,6 +256,12 @@ def check_anti_cheat():
     if purge_calls < 3:
         bad("anti cheat", "state is cleared %d times, expected before the first boot, "
                           "on every reset and at the end" % purge_calls)
+    for needle, why in (
+            ("_take_baseline", "does not snapshot what was there before a run"),
+            ("_baseline_pids", "kills processes it did not start"),
+            ("_baseline_entries", "removes files it did not create")):
+        if needle not in harness:
+            bad("anti cheat", "the sweep " + why)
     if "self._work = None" not in harness:
         bad("anti cheat", "the working directory is not rebuilt for each boot")
     if "if self._work is None:" not in harness:

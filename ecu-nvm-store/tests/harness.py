@@ -112,6 +112,8 @@ class Runner:
         self._run_gid = None
         self._last_pid = -1
         self._counting = False
+        self._baseline_pids = frozenset()
+        self._baseline_entries = {}
         if os.geteuid() == 0:
             try:
                 entry = pwd.getpwnam(RUN_USER)
@@ -190,6 +192,44 @@ class Runner:
         os.chmod(work, 0o700)
         return work, dst
 
+    def _pids_of(self, uid):
+        found = set()
+        try:
+            entries = os.listdir("/proc")
+        except OSError:
+            return found
+        for entry in entries:
+            if not entry.isdigit():
+                continue
+            try:
+                if os.stat("/proc/" + entry).st_uid == uid:
+                    found.add(int(entry))
+            except (OSError, ValueError):
+                continue
+        return found
+
+    def _take_baseline(self):
+        """Everything that was already here before this scenario started.
+
+        The sweep only ever removes what appeared afterwards. The same driver is
+        given to the agent to develop against, so it runs inside someone else's
+        container as well as this one, and it has no business deleting files or
+        killing processes that were not put there by the program it is driving.
+        """
+        uid = self._run_uid
+        if uid is None:
+            return
+        self._baseline_pids = self._pids_of(uid)
+        try:
+            bases = writable_dirs(uid, self._run_gid)
+        except OSError:
+            bases = [base for base in SEED_SCRATCH_DIRS if os.path.isdir(base)]
+        for base in bases:
+            try:
+                self._baseline_entries[base] = frozenset(os.listdir(base))
+            except OSError:
+                self._baseline_entries[base] = frozenset()
+
     def _purge_ipc(self, uid):
         """Remove any shared memory, queue or semaphore the program left."""
         removed = 0
@@ -244,18 +284,9 @@ class Runner:
         """
         uid = self._run_uid
         if uid is not None:
-            try:
-                entries = os.listdir("/proc")
-            except OSError:
-                entries = []
-            for entry in entries:
-                if not entry.isdigit():
-                    continue
-                pid = int(entry)
+            for pid in self._pids_of(uid) - self._baseline_pids:
                 try:
-                    if os.stat("/proc/" + entry).st_uid != uid:
-                        continue
-                    with open("/proc/%s/stat" % entry, "rb") as handle:
+                    with open("/proc/%d/stat" % pid, "rb") as handle:
                         state = handle.read().rsplit(b") ", 1)[1][:1]
                     os.kill(pid, signal.SIGKILL)
                 except (OSError, ValueError, IndexError):
@@ -273,8 +304,12 @@ class Runner:
                     names = os.listdir(base)
                 except OSError:
                     continue
+                known = self._baseline_entries.get(base, frozenset())
                 for name in names:
                     path = os.path.join(base, name)
+                    if name in known:
+                        continue  # it was there before this run and is not the
+                        # program's; the image's own files stay where they are
                     if self._work and os.path.abspath(path) == os.path.abspath(self._work):
                         continue  # the working directory is accounted for below
                     try:
@@ -705,6 +740,7 @@ class Runner:
         start = time.monotonic()
         self._deadline = start + self.timeout_s
         try:
+            self._take_baseline()
             self._purge_foreign_state()
             self._boot()
             self._verify([{None} for _ in self.blocks], resync=False)
