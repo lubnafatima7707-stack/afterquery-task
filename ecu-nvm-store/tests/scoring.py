@@ -3,7 +3,7 @@ Metric code shared by the verifier and by the authoring evidence scripts, so
 every number quoted about this task comes out of the same functions.
 """
 
-INTEGRITY_KINDS = ("corrupt", "rollback", "stale", "unanswered_read")
+INTEGRITY_KINDS = ("corrupt", "rollback", "stale", "unanswered_read", "not_on_device")
 
 BARS = {
     "integrity_violations": 0,

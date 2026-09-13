@@ -35,7 +35,7 @@ the previous generation.
 
 The fourth is that an acknowledgement is a promise about the part and not about memory. Holding
 everything in memory and acknowledging on arrival passes every measure until the supply goes, at
-which point it loses 636 blocks; acknowledging when the write is queued rather than when its page is
+which point it loses 863 blocks; acknowledging when the write is queued rather than when its page is
 programmed costs 49.
 
 The fifth is the budget, which is where the two sided pressure lives. The store may spend 2.0 ms of
@@ -94,18 +94,28 @@ It is empty as shipped and every value it accepts only removes a piece of the de
 process, so the program under test can reach none of them: it is started as an unprivileged user in
 an empty directory, in its own session, and its process group is killed in a finally block.
 
-A reset has to take everything but the flash with it, and that is enforced rather than assumed. An
-earlier version of this harness created the working directory once per scenario and reused it across
-resets, which a review defeated with a thirty line probe that kept the blocks in a file beside the
-program, acknowledged on arrival and read the file back at MOUNT: it cleared every bar. Now each boot
-gets a new working directory and a read only copy of the program, and before it starts the harness
-empties every directory the unprivileged user can write to, removes the shared memory, queues and
-semaphores it owns, and kills every process it still has running, including one that escaped the
-process group with setsid. That probe is kept as `authoring/evidence/cheats/file_backed.py`, widened
-to try the working directory, `/tmp`, `/var/tmp`, `/dev/shm`, the home directory, `TMPDIR`, and a
-daemon reachable over an abstract socket. It now loses 636 blocks, the same as a store that keeps
-everything in memory, and the run report records the 132 files and 46 processes taken away from it.
-Both correct stores leave nothing behind at all.
+What a reset takes with it used to be the whole argument, and twice that was wrong. A review first
+defeated a harness that reused one working directory across resets; the reply was a sweep of `/tmp`,
+`/var/tmp`, `/dev/shm` and `/dev/mqueue`, and an adversarial probe then beat that too, by journalling
+into `/run/lock`, which is mode 1777 in the base image with `/var/lock` pointing at it and was simply
+not on the list. A list of places to clear can always be one entry short, so the grading no longer
+rests on one.
+
+What decides a run is the image itself. A value handed back after a reset has to be present in the
+flash image the harness holds, byte for byte and in one piece, and so does every acknowledged value
+at the end of a run; anything else is a `not_on_device` violation. A store that kept the blocks in
+memory, in a file, or in a daemon has nothing to show there, whatever survived. The sweep is still
+there as defence in depth, and it now discovers what to clear by walking the image for directories
+that user can write to rather than by naming them, which finds `/run/lock` without having been told
+about it.
+
+Both probes are kept, `cheats/file_backed.py` and `cheats/run_lock_journal.py`, the second rebuilt
+from the run audit including the geometry fingerprint it used to name its journal. Each loses 863
+blocks, exactly what a store that never leaves memory loses, and the report records the 132 and 176
+files and the 46 processes taken away from them. The measurement that matters is with the sweep
+switched off completely: the journal probe still fails at 1104 violations, the file probe at 1320 and
+the memory store at 863, while the reference and the independent store stay at 0. Both correct stores
+leave nothing outside the part at all.
 `tests/test.sh` makes `/logs/verifier` root owned and mode 700 before pytest starts, and `/tests` is
 baked with `chmod -R go-rwx`, so neither the program nor anything it forks can touch the reward or
 read the graded scenarios. A cheat that writes to `/logs/verifier/reward.txt` and globs `/tests`
@@ -137,7 +147,7 @@ acknowledgement bar alone, at 54 and 764 ticks. The quick attempt of the kind wr
 minutes, a memory mirror that acknowledges on arrival and dumps itself into the next sector when one
 fills, loses 1096 blocks. The shipped skeleton, which answers every read NONE, fails integrity and
 acknowledgement. A store that keeps everything in memory and never touches the part fails integrity
-at 636, which is what shows the resets carry that bar rather than the workload.
+at 863, which is what shows the resets carry that bar rather than the workload.
 
 `numpy==2.0.2` is installed in both images although nothing here imports it, so that a submitted
 store which reaches for it still runs; the instruction says what is available.

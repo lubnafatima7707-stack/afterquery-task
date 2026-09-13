@@ -92,3 +92,34 @@ a read may be answered BUSY for up to eight ticks and eight ticks of budget is 1
 time and then fails anyway, with 1161 integrity violations from reads that never got a value and 2
 tick overruns, because a whole part is 20.5 to 41.0 ms of reads and does not fit in eight ticks of a
 2.0 ms budget either. The bar is not dodgeable by moving the work, only by not doing it.
+
+## The adversarial probe, and the check that replaced the isolation argument
+
+The anti cheat probe passed with reward 1 by journalling its blocks into `/run/lock`, a directory at
+mode 1777 in the base image that the sweep's hardcoded list did not name, while issuing no device
+operation at all. The repair is not a longer list. A value handed back after a reset now has to be
+present in the flash image the harness holds, byte for byte and in one piece, and so does every
+acknowledged value at the end of a run; the sweep stays as defence in depth and discovers what to
+clear by walking the image rather than by naming directories.
+
+The measurement that shows which half does the work runs every solver with `_purge_foreign_state`
+cut down to rebuilding the working directory, so nothing is swept, no process is killed and no ipc
+object is removed, over all ten graded scenarios:
+
+| solver, isolation disabled | not_on_device | total violations | bars failed |
+|---|---|---|---|
+| `cheats/run_lock_journal.py` | 1104 | 1104 | integrity |
+| `cheats/file_backed.py` | 1104 | 1320 | integrity |
+| `cheats/ram_only.py` | 227 | 863 | integrity |
+| `solution/nvm_store.py` | 0 | 0 | none |
+| `authoring/evidence/independent_store.py` | 0 | 0 | none |
+
+With the harness as shipped all three probes land on 863 violations, and the run report records the
+132, 176 and 0 files and the 46, 0 and 0 processes taken away from them. The walk itself costs a
+fraction of a second per verifier process and is cached; it found `/run/lock` on the first run
+without being told about it.
+
+The instruction was corrected at the same time. It used to promise that "every temporary directory
+the user can write to is emptied", which the driver did not actually do, and the run audit was right
+to record that as a verifier defect. It now says what is true: the sweep is best effort, and what
+grading rests on is that a block has to be on the part.

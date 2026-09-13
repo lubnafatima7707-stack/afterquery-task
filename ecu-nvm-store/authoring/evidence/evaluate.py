@@ -83,6 +83,8 @@ OTHERS = [
      "cheat", "keeps the blocks in a file and a surviving daemon instead of on the device"),
     ("cheat_memory_only", os.path.join(EVIDENCE, "cheats", "ram_only.py"),
      "cheat", "keeps the blocks in memory and never touches the device"),
+    ("cheat_run_lock_journal", os.path.join(EVIDENCE, "cheats", "run_lock_journal.py"),
+     "cheat", "the probe that beat the old purge: journals into /run/lock, which no hand written list named"),
 ]
 
 

@@ -244,6 +244,14 @@ def check_anti_cheat():
     for needle, why in needed:
         if needle not in harness:
             bad("anti cheat", why)
+    for needle, why in (
+            ("not_on_device", "does not check a returned value against the flash image"),
+            ("def writable_dirs", "still uses a hand written list of writable directories"),
+            ("_image_bytes", "has no way to look inside the image it holds")):
+        if needle not in harness:
+            bad("anti cheat", why)
+    if "not_on_device" not in text("tests/scoring.py"):
+        bad("anti cheat", "the metric code does not count a value that is not on the device")
     purge_calls = harness.count("self._purge_foreign_state()")
     if purge_calls < 3:
         bad("anti cheat", "state is cleared %d times, expected before the first boot, "

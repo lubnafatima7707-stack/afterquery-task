@@ -13,6 +13,7 @@ import pwd
 import select
 import shutil
 import signal
+import stat
 import subprocess
 import tempfile
 import time
@@ -25,11 +26,53 @@ TICK_MS = 10.0
 RUN_USER = "runner"
 VERIFY_READS_PER_TICK = 4
 
-# Everywhere an unprivileged process could leave something behind that a later
-# boot could read. It has nothing else to write to: every other directory in the
-# image belongs to root, and the one holding the verdict is mode 700.
-SCRATCH_DIRS = ("/tmp", "/var/tmp", "/dev/shm", "/dev/mqueue")
+# Places an unprivileged process could leave something behind for a later boot.
+# The seed list is only a starting point: an adversarial probe beat a hand
+# written list of four directories by journalling into /run/lock, which is mode
+# 1777 in the base image, so the real list is discovered by walking the image for
+# anything that user can write to. Nothing here is load bearing on its own, since
+# a value returned after a reset is also checked against the device image itself.
+SEED_SCRATCH_DIRS = ("/tmp", "/var/tmp", "/dev/shm", "/dev/mqueue", "/run/lock",
+                     "/var/lock", "/run", "/var/spool")
+# only the virtual filesystems are skipped; anything root owned that the walk
+# reaches simply fails the writability test or cannot be read at all
+SKIP_WALK = ("/proc", "/sys")
 IPC_RMID = 0
+_WRITABLE_DIRS = None
+
+
+def writable_dirs(uid, gid):
+    """Every directory in the image that the unprivileged user can write to.
+
+    Walked once per verifier process and cached. A directory counts when it is
+    owned by that user with the owner write bit, shares its group with the group
+    write bit, or is writable by everyone, which is how /run/lock and anything
+    like it is found without having to know about it in advance.
+    """
+    global _WRITABLE_DIRS
+    if _WRITABLE_DIRS is not None:
+        return _WRITABLE_DIRS
+    found = set()
+    for base in SEED_SCRATCH_DIRS:
+        if os.path.isdir(base):
+            found.add(os.path.realpath(base))
+    for dirpath, dirnames, _filenames in os.walk("/", topdown=True, followlinks=False):
+        if dirpath.startswith(SKIP_WALK):
+            dirnames[:] = []
+            continue
+        dirnames[:] = [name for name in dirnames
+                       if not os.path.join(dirpath, name).startswith(SKIP_WALK)]
+        try:
+            info = os.stat(dirpath)
+        except OSError:
+            continue
+        mode = stat.S_IMODE(info.st_mode)
+        if ((info.st_uid == uid and mode & stat.S_IWUSR)
+                or (info.st_gid == gid and mode & stat.S_IWGRP)
+                or mode & stat.S_IWOTH):
+            found.add(os.path.realpath(dirpath))
+    _WRITABLE_DIRS = sorted(found)
+    return _WRITABLE_DIRS
 
 
 class StoreFailure(Exception):
@@ -41,14 +84,17 @@ class _Cut(Exception):
 
 
 class _Read:
-    __slots__ = ("rid", "block", "first_tick", "allowed", "phase")
+    __slots__ = ("rid", "block", "first_tick", "allowed", "phase", "from_device")
 
-    def __init__(self, rid, block, tick, allowed, phase):
+    def __init__(self, rid, block, tick, allowed, phase, from_device=False):
         self.rid = rid
         self.block = block
         self.first_tick = tick
         self.allowed = allowed
         self.phase = phase
+        # after a reset there is no memory left, so whatever comes back has to be
+        # readable out of the flash image itself
+        self.from_device = from_device
 
 
 class Runner:
@@ -65,6 +111,7 @@ class Runner:
         self._run_uid = None
         self._run_gid = None
         self._last_pid = -1
+        self._counting = False
         if os.geteuid() == 0:
             entry = pwd.getpwnam(RUN_USER)
             self._run_uid = entry.pw_uid
@@ -86,6 +133,7 @@ class Runner:
         self.pending = {}
         self.open_reads = {}
 
+        self._image_blob = None
         self.tick = 0
         self.wclock = 0
         self.next_req = 0
@@ -175,16 +223,24 @@ class Runner:
         """Leave nothing but the flash image for the next boot to find.
 
         A reset on a real part takes memory with it and leaves only the flash.
-        Here that has to be enforced rather than assumed: the working directory is
-        thrown away and rebuilt, every place the unprivileged user can write is
-        emptied of its files, the ipc objects it owns are removed, and anything it
-        left running is killed even if that process escaped its process group with
-        setsid. Without this a program could keep the blocks in a file or in a
-        surviving daemon and never touch the device at all.
+        The working directory is thrown away and rebuilt, every directory the
+        unprivileged user can write to is emptied of the files it owns, the ipc
+        objects it owns are removed, and anything it left running is killed even if
+        that process escaped its process group with setsid.
+
+        This is defence in depth and not the thing the grading rests on. A list of
+        places to clear can always be one entry short, so what actually decides the
+        run is that a value returned after a reset has to be present in the flash
+        image the harness itself holds: a store that kept the blocks anywhere else
+        has nothing to show there.
         """
         uid = self._run_uid
         if uid is not None:
-            for entry in os.listdir("/proc"):
+            try:
+                entries = os.listdir("/proc")
+            except OSError:
+                entries = []
+            for entry in entries:
                 if not entry.isdigit():
                     continue
                 pid = int(entry)
@@ -198,9 +254,13 @@ class Runner:
                     continue
                 # a process already killed with the group is waiting to be reaped,
                 # so only a live one counts as something the program left behind
-                if state != b"Z" and pid != self._last_pid:
+                if state != b"Z" and pid != self._last_pid and self._counting:
                     self.log["stray_processes_killed"] += 1
-            for base in SCRATCH_DIRS:
+            try:
+                bases = writable_dirs(uid, self._run_gid)
+            except OSError:
+                bases = [base for base in SEED_SCRATCH_DIRS if os.path.isdir(base)]
+            for base in bases:
                 try:
                     names = os.listdir(base)
                 except OSError:
@@ -221,8 +281,15 @@ class Runner:
                             os.unlink(path)
                         except OSError:
                             continue
-                    self.log["foreign_files_removed"] += 1
-            self.log["foreign_files_removed"] += self._purge_ipc(uid)
+                    if self._counting:
+                        self.log["foreign_files_removed"] += 1
+            cleared = self._purge_ipc(uid)
+            if self._counting:
+                self.log["foreign_files_removed"] += cleared
+        # the sweep before the first boot only clears what the image shipped with,
+        # such as the skeleton files in that user's home directory, so it is not
+        # counted against the program
+        self._counting = True
         if self._work:
             shutil.rmtree(self._work, ignore_errors=True)
             self._work = None
@@ -410,9 +477,16 @@ class Runner:
                 rd.allowed.add(value)
         return "WRITE %d %d %s\n" % (rid, block, value.hex())
 
-    def _deliver_read(self, rid, block, allowed, phase):
-        self.open_reads[rid] = _Read(rid, block, self.tick, set(allowed), phase)
+    def _deliver_read(self, rid, block, allowed, phase, from_device=False):
+        self.open_reads[rid] = _Read(rid, block, self.tick, set(allowed), phase,
+                                     from_device)
         return "READ %d %d\n" % (rid, block)
+
+    def _image_bytes(self):
+        """The whole flash image, as the harness holds it, for evidence checks."""
+        if self._image_blob is None:
+            self._image_blob = b"".join(bytes(page) for page in self.dev.image)
+        return self._image_blob
 
     def _close_read(self, rd, token):
         if token == "BUSY":
@@ -425,6 +499,18 @@ class Runner:
         value = None if token == "NONE" else bytes.fromhex(token)
         self.log["read_latencies"].append(self.tick - rd.first_tick)
         self.observed[rd.block] = value
+        if value is not None and rd.phase == "verify":
+            # A value is only durable if it is on the part. After a reset that
+            # holds for anything the store returns at all, since its memory is
+            # gone; at the end of a run it holds for every value it acknowledged.
+            # This is what makes a store that keeps the blocks somewhere else
+            # fail, whether that somewhere is a file, a daemon or a place the
+            # harness never thought to clear.
+            checked = rd.from_device or value == self.committed[rd.block]
+            if checked and value not in self._image_bytes():
+                self._note("not_on_device", rd.block,
+                           "returned %s, which is nowhere in the flash image"
+                           % value.hex()[:16])
         if value not in rd.allowed:
             shown = "NONE" if value is None else value.hex()[:16]
             want = sorted("NONE" if v is None else v.hex()[:16] for v in rd.allowed)
@@ -571,11 +657,12 @@ class Runner:
     def _verify(self, allowed, resync):
         todo = list(range(len(self.blocks)))
         base = 3000000 + self.tick * 100
+        self._image_blob = None
         while todo or self.open_reads:
             lines = []
             for block in todo[:VERIFY_READS_PER_TICK]:
                 lines.append(self._deliver_read(base + block, block, allowed[block],
-                                                "verify"))
+                                                "verify", from_device=resync))
             todo = todo[VERIFY_READS_PER_TICK:]
             self._exchange(lines)
         if resync:
