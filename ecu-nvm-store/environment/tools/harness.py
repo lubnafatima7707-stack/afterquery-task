@@ -113,9 +113,17 @@ class Runner:
         self._last_pid = -1
         self._counting = False
         if os.geteuid() == 0:
-            entry = pwd.getpwnam(RUN_USER)
-            self._run_uid = entry.pw_uid
-            self._run_gid = entry.pw_gid
+            try:
+                entry = pwd.getpwnam(RUN_USER)
+            except KeyError:
+                # An image without the account still runs, as the same user the
+                # driver runs as and without dropping privileges. The graded image
+                # always has it; the run log says which way it went so a
+                # development run is never mistaken for a graded one.
+                entry = None
+            if entry is not None:
+                self._run_uid = entry.pw_uid
+                self._run_gid = entry.pw_gid
         self.proc = None
         self._work = None
         self._dst = None

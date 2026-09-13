@@ -45,6 +45,10 @@ def main():
             continue
         metrics = scoring.scenario_metrics(log)
         per.append(metrics)
+        if not log.get("isolated", True):
+            print("%-12s note: no runner account here, so the store ran as this user "
+                  "and nothing was swept between resets; the graded run always drops "
+                  "to that account" % case["name"])
         print("%-12s %s" % (case["name"],
                             " ".join("%s=%s" % (k, metrics[k]) for k in FIELDS)))
         for violation in log["violations"][:6]:

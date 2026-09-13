@@ -10,7 +10,7 @@ afterwards appear to want different files.
 
 ## What the reviews said
 
-`vehicle-ekf-fusion` (10 Sep) and `ecu-nvm-store` (13 Sep) were both flagged for:
+`vehicle-ekf-fusion` (10 Sep) and `ecu-nvm-store` (13 Sep, twice) were flagged for:
 
 1. **`[task].name`.** The review wants `<benchmark>/<slug>`, with the benchmark
    name redacted in the report I receive, and reads `afterquery/<slug>` as wrong.
@@ -25,6 +25,10 @@ afterwards appear to want different files.
    `category = "Science"`, `subcategory`, and the three explanation fields
    (`difficulty_explanation`, `solution_explanation`, `verification_explanation`)
    as not belonging, with the explanations said to belong in `README.md` instead.
+   The most recent review is explicit about the reasoning: it says this benchmark
+   "intentionally uses domain/field/subfield instead" of `category` and
+   `subcategory`, and notes that the three explanations are also present in
+   `README.md`, which is exactly what the documented bundle layout asks for.
    `Authoring tasks.md` lists every one of those as required, says to keep
    `category` at exactly `Science` and to set `subcategory` to the field's display
    name, and says reviewers read the three explanations first. The second review

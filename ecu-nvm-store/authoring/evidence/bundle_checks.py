@@ -260,6 +260,20 @@ def check_anti_cheat():
         bad("anti cheat", "the working directory is not rebuilt for each boot")
     if "if self._work is None:" not in harness:
         bad("anti cheat", "the working directory is not recreated lazily per boot")
+    # the image the agent works in has to provide whatever the shipped driver
+    # needs, or the development checker named in the instruction fails on a
+    # machine nobody tested it on
+    account = re.search(r'RUN_USER = "([a-z0-9_]+)"', harness)
+    if account is None:
+        bad("anti cheat", "the driver does not name the account it runs the store as")
+    else:
+        for rel in ("environment/Dockerfile", "tests/Dockerfile"):
+            if ("useradd" not in text(rel)) or (account.group(1) not in text(rel)):
+                bad("environment", "%s does not create the %s account the driver uses"
+                    % (rel, account.group(1)))
+        if "except KeyError" not in harness:
+            bad("environment", "the driver raises rather than degrading when that "
+                               "account is missing")
     shipped = read("environment/tools/harness.py")
     if shipped != read("tests/harness.py"):
         bad("anti cheat", "the driver given to the agent differs from the one that grades")

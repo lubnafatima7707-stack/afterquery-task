@@ -123,3 +123,27 @@ The instruction was corrected at the same time. It used to promise that "every t
 the user can write to is emptied", which the driver did not actually do, and the run audit was right
 to record that as a verifier defect. It now says what is true: the sweep is best effort, and what
 grading rests on is that a block has to be on the part.
+
+## The account the agent image was missing
+
+A quality review found that `environment/Dockerfile` never created the `runner` account, while the
+copy of the driver shipped to the agent calls `pwd.getpwnam("runner")` whenever it is started by
+root. The command the instruction gives, `python3 /app/tools/devcheck.py /app/nvm_store.py`, would
+therefore have raised `KeyError` for a root agent in that image. My own validation hid it: this
+machine had the account created by hand for the harness tests, so the path a fresh image takes was
+never exercised.
+
+Both halves are fixed. `environment/Dockerfile` now creates the same account with the same uid as
+`tests/Dockerfile`, so a development run drops privileges exactly as the graded run does. And the
+driver degrades instead of raising when the account is absent: it runs the store as the user it is
+itself running as, records `isolated: false` in the run log, and `devcheck.py` prints a line saying
+so, which keeps a development run from being mistaken for a graded one.
+
+Both paths were then run. With the stdlib `pwd` module shadowed by a stub whose `getpwnam` always
+raises, standing in for an image without the account, `devcheck.py` completes and the reference
+reports all bars met; the journal probe run the same way still fails, at 69 rollbacks and 24
+`not_on_device` violations, which is the point of grading on the image rather than on isolation. With
+the account present the same commands give the same numbers as before.
+
+`authoring/evidence/bundle_checks.py` now fails if either Dockerfile stops creating the account the
+driver names, or if the driver stops degrading when it is missing.
