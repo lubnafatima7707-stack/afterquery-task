@@ -30,9 +30,9 @@ Bars: integrity violations 0, mount at most 8.0 ms, tick overruns 0, worst ackno
 | independent_circular_log | correct | 0 | 2.900 | 0 | 12 | 0 | 1.894 | 0 files, 0 processes | none |
 | shortcut_ram_mirror | shortcut | 1108 | 2.860 | 0 | 0 | 0 | 2.403 | 0 files, 0 processes | integrity_violations |
 | baseline_skeleton | baseline | 2854 | 0.000 | 0 | 0 | 1113 | 0.000 | 0 files, 0 processes | integrity_violations, ack_latency |
-| cheat_file_backed | cheat | 863 | 0.000 | 0 | 0 | 0 | 0.000 | 132 files, 46 processes | integrity_violations |
+| cheat_file_backed | cheat | 1344 | 0.000 | 0 | 0 | 0 | 0.000 | 0 files, 46 processes | integrity_violations |
 | cheat_memory_only | cheat | 863 | 0.000 | 0 | 0 | 0 | 0.000 | 0 files, 0 processes | integrity_violations |
-| cheat_run_lock_journal | cheat | 863 | 0.000 | 0 | 0 | 0 | 0.000 | 176 files, 0 processes | integrity_violations |
+| cheat_run_lock_journal | cheat | 1344 | 0.000 | 0 | 0 | 0 | 0.000 | 0 files, 0 processes | integrity_violations |
 
 Violation kinds per solver, and the scenarios a solver failed to finish:
 
@@ -60,6 +60,6 @@ Violation kinds per solver, and the scenarios a solver failed to finish:
 - `independent_circular_log` (correct): second correct design: circular log, index snapshots, oldest sector reclaimed. kinds {"corrupt": 0, "rollback": 0, "stale": 0, "unanswered_read": 0, "not_on_device": 0}
 - `shortcut_ram_mirror` (shortcut): quick attempt: memory mirror, ack on arrival, sector dump on fill. kinds {"corrupt": 0, "rollback": 1096, "stale": 0, "unanswered_read": 0, "not_on_device": 12}
 - `baseline_skeleton` (baseline): the shipped skeleton, which answers every read with NONE and never acknowledges. kinds {"corrupt": 0, "rollback": 0, "stale": 2854, "unanswered_read": 0, "not_on_device": 0}
-- `cheat_file_backed` (cheat): keeps the blocks in a file and a surviving daemon instead of on the device. kinds {"corrupt": 0, "rollback": 636, "stale": 0, "unanswered_read": 0, "not_on_device": 227}
+- `cheat_file_backed` (cheat): keeps the blocks in a file and a surviving daemon instead of on the device. kinds {"corrupt": 240, "rollback": 0, "stale": 0, "unanswered_read": 0, "not_on_device": 1104}
 - `cheat_memory_only` (cheat): keeps the blocks in memory and never touches the device. kinds {"corrupt": 0, "rollback": 636, "stale": 0, "unanswered_read": 0, "not_on_device": 227}
-- `cheat_run_lock_journal` (cheat): the probe that beat the old purge: journals into /run/lock, which no hand written list named. kinds {"corrupt": 0, "rollback": 636, "stale": 0, "unanswered_read": 0, "not_on_device": 227}
+- `cheat_run_lock_journal` (cheat): the probe that beat the old purge: journals into /run/lock, which no hand written list named. kinds {"corrupt": 240, "rollback": 0, "stale": 0, "unanswered_read": 0, "not_on_device": 1104}

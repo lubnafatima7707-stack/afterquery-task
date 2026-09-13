@@ -257,6 +257,8 @@ def check_anti_cheat():
         bad("anti cheat", "state is cleared %d times, expected before the first boot, "
                           "on every reset and at the end" % purge_calls)
     for needle, why in (
+            ("WORKDIR_PREFIX", "can delete the working directory of another run"),
+            ("_is_ours", "kills processes by user id rather than by this run's marker"),
             ("_take_baseline", "does not snapshot what was there before a run"),
             ("_baseline_pids", "kills processes it did not start"),
             ("_baseline_entries", "removes files it did not create")):

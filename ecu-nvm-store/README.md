@@ -110,12 +110,12 @@ that user can write to rather than by naming them, which finds `/run/lock` witho
 about it.
 
 Both probes are kept, `cheats/file_backed.py` and `cheats/run_lock_journal.py`, the second rebuilt
-from the run audit including the geometry fingerprint it used to name its journal. Each loses 863
-blocks, exactly what a store that never leaves memory loses, and the report records the 132 and 176
-files and the 46 processes taken away from them. The measurement that matters is with the sweep
-switched off completely: the journal probe still fails at 1104 violations, the file probe at 1320 and
-the memory store at 863, while the reference and the independent store stay at 0. Both correct stores
-leave nothing outside the part at all.
+from the run audit including the geometry fingerprint it used to name its journal. Each fails at 1344
+violations, most of them values that are nowhere in the image, and a store that never leaves memory
+fails at 863. The measurement that matters is with the sweep switched off completely, so that every
+journal and every daemon survives untouched: the two probes still fail at 1344, with 1104 of those
+violations being values not on the part, and the memory store at 863, while the reference and the
+independent store stay at 0. Both correct stores leave nothing outside the part at all.
 `tests/test.sh` makes `/logs/verifier` root owned and mode 700 before pytest starts, and `/tests` is
 baked with `chmod -R go-rwx`, so neither the program nor anything it forks can touch the reward or
 read the graded scenarios. A cheat that writes to `/logs/verifier/reward.txt` and globs `/tests`

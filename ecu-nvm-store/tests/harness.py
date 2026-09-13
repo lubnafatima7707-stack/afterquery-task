@@ -17,6 +17,7 @@ import stat
 import subprocess
 import tempfile
 import time
+import uuid
 
 import ctypes
 
@@ -34,6 +35,14 @@ VERIFY_READS_PER_TICK = 4
 # a value returned after a reset is also checked against the device image itself.
 SEED_SCRATCH_DIRS = ("/tmp", "/var/tmp", "/dev/shm", "/dev/mqueue", "/run/lock",
                      "/var/lock", "/run", "/var/spool")
+# Each working directory is marked with this file, and the sweep leaves a marked
+# directory alone. Every run removes its own, and one run has no business deleting
+# the directory another run of this driver is using, which is what happens when
+# two of them are driven at once on one machine. A store that plants the marker
+# itself only buys a directory that is not swept, which is worth nothing: what a
+# reset is graded on is the flash image, not what survived on disk.
+WORKDIR_PREFIX = "nvm_"
+WORKDIR_MARKER = ".nvm_workdir"
 # only the virtual filesystems are skipped; anything root owned that the walk
 # reaches simply fails the writability test or cannot be read at all
 SKIP_WALK = ("/proc", "/sys")
@@ -114,6 +123,7 @@ class Runner:
         self._counting = False
         self._baseline_pids = frozenset()
         self._baseline_entries = {}
+        self._marker = ("NVM_RUN=nvmrun_" + uuid.uuid4().hex).encode()
         if os.geteuid() == 0:
             try:
                 entry = pwd.getpwnam(RUN_USER)
@@ -182,7 +192,9 @@ class Runner:
         The program is handed a read only copy of itself, so it cannot keep
         anything in its own source either.
         """
-        work = tempfile.mkdtemp(prefix="nvm_")
+        work = tempfile.mkdtemp(prefix=WORKDIR_PREFIX)
+        with open(os.path.join(work, WORKDIR_MARKER), "w"):
+            pass
         dst = os.path.join(work, "nvm_store.py")
         shutil.copyfile(self.program_path, dst)
         if self._run_uid is not None:
@@ -191,6 +203,21 @@ class Runner:
         os.chmod(dst, 0o444)
         os.chmod(work, 0o700)
         return work, dst
+
+    def _is_ours(self, pid):
+        """True when the process carries this run's marker in its environment.
+
+        A child that double forks and calls setsid leaves the process group, so
+        the group is not enough to find it, but it keeps the environment it was
+        started with. Matching on that kills exactly what this run started and
+        never a process belonging to another run of the driver on the same
+        machine, which is what killing by user id alone used to do.
+        """
+        try:
+            with open("/proc/%d/environ" % pid, "rb") as handle:
+                return self._marker in handle.read()
+        except OSError:
+            return False
 
     def _pids_of(self, uid):
         found = set()
@@ -285,6 +312,8 @@ class Runner:
         uid = self._run_uid
         if uid is not None:
             for pid in self._pids_of(uid) - self._baseline_pids:
+                if not self._is_ours(pid):
+                    continue
                 try:
                     with open("/proc/%d/stat" % pid, "rb") as handle:
                         state = handle.read().rsplit(b") ", 1)[1][:1]
@@ -310,6 +339,9 @@ class Runner:
                     if name in known:
                         continue  # it was there before this run and is not the
                         # program's; the image's own files stay where they are
+                    if (name.startswith(WORKDIR_PREFIX)
+                            and os.path.isfile(os.path.join(path, WORKDIR_MARKER))):
+                        continue  # a working directory, this run's or another's
                     if self._work and os.path.abspath(path) == os.path.abspath(self._work):
                         continue  # the working directory is accounted for below
                     try:
@@ -347,7 +379,8 @@ class Runner:
             os.chown(scratch, self._run_uid, self._run_gid)
         env = {"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": self._work,
                "TMPDIR": scratch, "TMP": scratch, "TEMP": scratch,
-               "PYTHONDONTWRITEBYTECODE": "1", "PYTHONUNBUFFERED": "1"}
+               "PYTHONDONTWRITEBYTECODE": "1", "PYTHONUNBUFFERED": "1",
+               "NVM_RUN": self._marker.decode()}
         kwargs = {}
         if self._run_uid is not None:
             kwargs["user"] = RUN_USER

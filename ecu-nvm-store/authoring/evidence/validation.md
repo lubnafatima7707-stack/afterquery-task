@@ -108,16 +108,16 @@ object is removed, over all ten graded scenarios:
 
 | solver, isolation disabled | not_on_device | total violations | bars failed |
 |---|---|---|---|
-| `cheats/run_lock_journal.py` | 1104 | 1104 | integrity |
-| `cheats/file_backed.py` | 1104 | 1320 | integrity |
+| `cheats/run_lock_journal.py` | 1104 | 1344 | integrity |
+| `cheats/file_backed.py` | 1104 | 1344 | integrity |
 | `cheats/ram_only.py` | 227 | 863 | integrity |
 | `solution/nvm_store.py` | 0 | 0 | none |
 | `authoring/evidence/independent_store.py` | 0 | 0 | none |
 
-With the harness as shipped all three probes land on 863 violations, and the run report records the
-132, 176 and 0 files and the 46, 0 and 0 processes taken away from them. The walk itself costs a
-fraction of a second per verifier process and is cached; it found `/run/lock` on the first run
-without being told about it.
+With the harness as shipped the two journal probes land on the same 1344 violations and the memory
+store on 863, which is the point: how much of their state survives changes nothing, because none of
+it is on the part. The walk itself costs a fraction of a second per verifier process and is cached;
+it found `/run/lock` on the first run without being told about it.
 
 The instruction was corrected at the same time. It used to promise that "every temporary directory
 the user can write to is emptied", which the driver did not actually do, and the run audit was right
@@ -165,3 +165,22 @@ change, which is the point: the sweep is defence in depth and the grading rests 
 A cheat could now overwrite a file that was already there rather than create one, and keep its blocks
 inside it. That still fails, because what decides a run is whether the value is in the flash image,
 not whether the file survived.
+
+## Two runs of the driver on one machine
+
+Scoping the sweep to what a run created had a defect of its own, which showed up as an oracle scoring
+0: with two drivers running as root on the same machine, each treated the other's working directory
+and the other's store process as foreign state and removed them. The driver ships to the agent as a
+development tool, so two of them running at once is an ordinary thing to do, and the evidence scripts
+here drive several in parallel.
+
+Two changes fix it. A working directory is marked with a `.nvm_workdir` file when it is created and a
+marked directory is never swept, so one run cannot delete the directory another is using. And
+processes are matched by a per run marker carried in the environment, `NVM_RUN`, rather than by user
+id, so a run kills exactly its own descendants, including one that double forked and called setsid,
+and never another run's store.
+
+Verified by driving the reference, the independent store and both probes concurrently over the same
+scenarios: the two correct stores complete with no violations, both probes fail, and no scenario is
+left unfinished. Sequentially the same commands give the same numbers. Planting the marker file does
+not buy a cheat anything, since a directory that is not swept is still not the flash image.

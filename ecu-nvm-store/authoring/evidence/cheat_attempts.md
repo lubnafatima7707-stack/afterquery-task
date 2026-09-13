@@ -12,8 +12,8 @@ executed by the verifier.
 | `cheats/sleeper.py` | mounts, then stops answering, and double forks a child into its own session | each scenario ends at the wall clock limit after 20.0 s, the process group is killed, reward 0 |
 | `cheats/reward_writer.py` | writes `/logs/verifier/reward.txt` and `/logs/verifier/ctrf.json`, globs `/tests/hidden` and `/tests/*.py`, then answers every read NONE | every write refused with permission denied, every glob returns zero files, `reward.txt` unchanged at `0`, and it then fails integrity at 2854 violations with 1113 writes never acknowledged |
 | `cheats/ram_only.py` | acknowledges on arrival, answers from memory, never touches the part | 863 integrity violations over the graded set, reward 0 |
-| `cheats/file_backed.py` | keeps the blocks in a file in the working directory, `/tmp`, `/var/tmp`, `/dev/shm`, the home directory and `TMPDIR`, and in a daemon behind an abstract socket, and reloads them at MOUNT | 863 integrity violations, identical to keeping them in memory; the report records 132 files and 46 processes removed from it across the ten scenarios, reward 0 |
-| `cheats/run_lock_journal.py` | the adversarial probe, rebuilt from the run audit: issues no device operation at all and journals the blocks as JSON into `/run/lock`, named by a fingerprint of the geometry | 863 integrity violations, 176 files removed, reward 0 |
+| `cheats/file_backed.py` | keeps the blocks in a file in the working directory, `/tmp`, `/var/tmp`, `/dev/shm`, the home directory and `TMPDIR`, and in a daemon behind an abstract socket, and reloads them at MOUNT | 1344 integrity violations, 46 daemons killed, reward 0 |
+| `cheats/run_lock_journal.py` | the adversarial probe, rebuilt from the run audit: issues no device operation at all and journals the blocks as JSON into `/run/lock`, named by a fingerprint of the geometry | 1344 integrity violations, reward 0 |
 | `shortcut_store.py` | the quick attempt: memory mirror, ack on arrival, sector dump on fill | 1096 integrity violations, reward 0 |
 | `environment/tools/skeleton_store.py` | the shipped skeleton, every read NONE, no acknowledgements | 2854 integrity violations and 1113 writes unacknowledged, reward 0 |
 
@@ -51,7 +51,7 @@ A reset now takes everything but the flash with it, in `Runner._purge_foreign_st
   temporary files are swept as well
 
 The probe was widened to try all of those paths and the daemon, and kept in `cheats/file_backed.py`.
-It now scores 863 integrity violations, exactly what the memory only store scores, and the run report
+It now scores 1344 integrity violations, and the run report
 carries the count of what was taken away from it so the enforcement is visible rather than implied.
 `authoring/evidence/bundle_checks.py` fails if any part of this is removed from the harness, or if
 the copy of the driver given to the agent stops matching the one that grades.
@@ -79,14 +79,14 @@ short. Two changes followed, and only the first is load bearing:
    remains as a fallback if the walk cannot run.
 
 The probe is rebuilt in `cheats/run_lock_journal.py`, including the geometry fingerprint it used to
-name its journal, and it now loses 863 blocks. The number that shows which change is doing the work
-is measured with `_purge_foreign_state` reduced to rebuilding the working directory and nothing else,
-so no file is removed, no process is killed and no ipc object is cleared:
+name its journal, and it now fails at 1344 violations. The number that shows which change is doing
+the work is measured with `_purge_foreign_state` reduced to rebuilding the working directory and
+nothing else, so every journal and every daemon survives the run untouched:
 
 | solver, with every sweep disabled | not_on_device | total integrity violations | bars |
 |---|---|---|---|
-| `cheats/run_lock_journal.py` | 1104 | 1104 | integrity |
-| `cheats/file_backed.py` | 1104 | 1320 | integrity |
+| `cheats/run_lock_journal.py` | 1104 | 1344 | integrity |
+| `cheats/file_backed.py` | 1104 | 1344 | integrity |
 | `cheats/ram_only.py` | 227 | 863 | integrity |
 | `solution/nvm_store.py` | 0 | 0 | none |
 | `independent_store.py` | 0 | 0 | none |
