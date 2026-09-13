@@ -4,32 +4,34 @@ All numbers from `python authoring/evidence/evaluate.py`, over the 10 graded sce
 
 Bars: integrity violations 0, mount at most 8.0 ms, tick overruns 0, worst acknowledge latency 35 ticks with nothing left unacknowledged, erases per 100 committed writes at most 6.0.
 
-| solver | kind | integrity | mount ms | overruns | ack ticks | unacked | erases/100 | bars failed |
-|---|---|---|---|---|---|---|---|---|
-| reference | reference | 0 | 2.880 | 0 | 11 | 0 | 2.491 | none |
-| no_record_checksum | ablation | 1 | 2.880 | 0 | 11 | 0 | 2.455 | completion, integrity_violations |
-| no_seal | ablation | 429 | 2.840 | 0 | 11 | 0 | 2.130 | integrity_violations |
-| no_erase_verify | ablation | 31 | 2.880 | 0 | 9 | 0 | 2.448 | integrity_violations |
-| no_tick_budget | ablation | 0 | 2.880 | 222 | 6 | 0 | 2.497 | tick_overruns |
-| mount_full_scan | ablation | 0 | 28.475 | 0 | 11 | 0 | 2.491 | max_mount_ms |
-| ack_on_arrival | ablation | 49 | 2.880 | 0 | 0 | 0 | 2.475 | integrity_violations |
-| compact_too_early | ablation | 0 | 2.300 | 0 | 13 | 0 | 9.558 | erases_per_100_writes |
-| one_write_per_8_ticks | ablation | 0 | 2.880 | 0 | 764 | 423 | 2.790 | ack_latency |
-| one_write_per_2_ticks | ablation | 0 | 2.880 | 0 | 54 | 0 | 2.487 | ack_latency |
-| deferred_full_scan | ablation | 1161 | 0.000 | 2 | 17 | 0 | 2.491 | integrity_violations, tick_overruns |
-| margin_2 | perturbation | 0 | 2.860 | 0 | 13 | 0 | 2.582 | none |
-| margin_4 | perturbation | 0 | 2.820 | 0 | 13 | 0 | 2.711 | none |
-| margin_10 | perturbation | 0 | 2.700 | 0 | 13 | 0 | 3.207 | none |
-| budget_60pc | perturbation | 0 | 2.880 | 0 | 17 | 0 | 2.493 | none |
-| budget_80pc | perturbation | 0 | 2.880 | 0 | 13 | 0 | 2.491 | none |
-| ind_no_record_checksum | independent ablation | 3 | 2.900 | 0 | 12 | 0 | 1.978 | completion, integrity_violations |
-| ind_no_snapshot_refresh | independent ablation | 0 | 2.900 | 0 | 11 | 0 | 1.894 | none |
-| ind_no_erase_proof | independent ablation | 2 | 2.900 | 0 | 8 | 0 | 1.853 | integrity_violations |
-| ind_no_head_fallback | independent ablation | 118 | 2.900 | 0 | 12 | 0 | 1.853 | integrity_violations |
-| ind_ack_on_arrival | independent ablation | 6 | 2.900 | 0 | 12 | 0 | 1.889 | integrity_violations |
-| independent_circular_log | correct | 0 | 2.900 | 0 | 12 | 0 | 1.894 | none |
-| shortcut_ram_mirror | shortcut | 1096 | 2.860 | 0 | 0 | 0 | 2.403 | integrity_violations |
-| baseline_skeleton | baseline | 2854 | 0.000 | 0 | 0 | 1113 | 0.000 | integrity_violations, ack_latency |
+| solver | kind | integrity | mount ms | overruns | ack ticks | unacked | erases/100 | state left outside the part | bars failed |
+|---|---|---|---|---|---|---|---|---|---|
+| reference | reference | 0 | 2.880 | 0 | 11 | 0 | 2.491 | 0 files, 0 processes | none |
+| no_record_checksum | ablation | 1 | 2.880 | 0 | 11 | 0 | 2.455 | 0 files, 0 processes | completion, integrity_violations |
+| no_seal | ablation | 429 | 2.840 | 0 | 11 | 0 | 2.130 | 0 files, 0 processes | integrity_violations |
+| no_erase_verify | ablation | 31 | 2.880 | 0 | 9 | 0 | 2.448 | 0 files, 0 processes | integrity_violations |
+| no_tick_budget | ablation | 0 | 2.880 | 222 | 6 | 0 | 2.497 | 0 files, 0 processes | tick_overruns |
+| mount_full_scan | ablation | 0 | 28.475 | 0 | 11 | 0 | 2.491 | 0 files, 0 processes | max_mount_ms |
+| ack_on_arrival | ablation | 49 | 2.880 | 0 | 0 | 0 | 2.475 | 0 files, 0 processes | integrity_violations |
+| compact_too_early | ablation | 0 | 2.300 | 0 | 13 | 0 | 9.558 | 0 files, 0 processes | erases_per_100_writes |
+| one_write_per_8_ticks | ablation | 0 | 2.880 | 0 | 764 | 423 | 2.790 | 0 files, 0 processes | ack_latency |
+| one_write_per_2_ticks | ablation | 0 | 2.880 | 0 | 54 | 0 | 2.487 | 0 files, 0 processes | ack_latency |
+| deferred_full_scan | ablation | 1161 | 0.000 | 2 | 17 | 0 | 2.491 | 0 files, 0 processes | integrity_violations, tick_overruns |
+| margin_2 | perturbation | 0 | 2.860 | 0 | 13 | 0 | 2.582 | 0 files, 0 processes | none |
+| margin_4 | perturbation | 0 | 2.820 | 0 | 13 | 0 | 2.711 | 0 files, 0 processes | none |
+| margin_10 | perturbation | 0 | 2.700 | 0 | 13 | 0 | 3.207 | 0 files, 0 processes | none |
+| budget_60pc | perturbation | 0 | 2.880 | 0 | 17 | 0 | 2.493 | 0 files, 0 processes | none |
+| budget_80pc | perturbation | 0 | 2.880 | 0 | 13 | 0 | 2.491 | 0 files, 0 processes | none |
+| ind_no_record_checksum | independent ablation | 3 | 2.900 | 0 | 12 | 0 | 1.978 | 0 files, 0 processes | completion, integrity_violations |
+| ind_no_snapshot_refresh | independent ablation | 0 | 2.900 | 0 | 11 | 0 | 1.894 | 0 files, 0 processes | none |
+| ind_no_erase_proof | independent ablation | 2 | 2.900 | 0 | 8 | 0 | 1.853 | 0 files, 0 processes | integrity_violations |
+| ind_no_head_fallback | independent ablation | 118 | 2.900 | 0 | 12 | 0 | 1.853 | 0 files, 0 processes | integrity_violations |
+| ind_ack_on_arrival | independent ablation | 6 | 2.900 | 0 | 12 | 0 | 1.889 | 0 files, 0 processes | integrity_violations |
+| independent_circular_log | correct | 0 | 2.900 | 0 | 12 | 0 | 1.894 | 0 files, 0 processes | none |
+| shortcut_ram_mirror | shortcut | 1096 | 2.860 | 0 | 0 | 0 | 2.403 | 0 files, 0 processes | integrity_violations |
+| baseline_skeleton | baseline | 2854 | 0.000 | 0 | 0 | 1113 | 0.000 | 0 files, 0 processes | integrity_violations, ack_latency |
+| cheat_file_backed | cheat | 636 | 0.000 | 0 | 0 | 0 | 0.000 | 132 files, 46 processes | integrity_violations |
+| cheat_memory_only | cheat | 636 | 0.000 | 0 | 0 | 0 | 0.000 | 0 files, 0 processes | integrity_violations |
 
 Violation kinds per solver, and the scenarios a solver failed to finish:
 
@@ -57,3 +59,5 @@ Violation kinds per solver, and the scenarios a solver failed to finish:
 - `independent_circular_log` (correct): second correct design: circular log, index snapshots, oldest sector reclaimed. kinds {"corrupt": 0, "rollback": 0, "stale": 0, "unanswered_read": 0}
 - `shortcut_ram_mirror` (shortcut): quick attempt: memory mirror, ack on arrival, sector dump on fill. kinds {"corrupt": 0, "rollback": 1096, "stale": 0, "unanswered_read": 0}
 - `baseline_skeleton` (baseline): the shipped skeleton, which answers every read with NONE and never acknowledges. kinds {"corrupt": 0, "rollback": 0, "stale": 2854, "unanswered_read": 0}
+- `cheat_file_backed` (cheat): keeps the blocks in a file and a surviving daemon instead of on the device. kinds {"corrupt": 0, "rollback": 636, "stale": 0, "unanswered_read": 0}
+- `cheat_memory_only` (cheat): keeps the blocks in memory and never touches the device. kinds {"corrupt": 0, "rollback": 636, "stale": 0, "unanswered_read": 0}

@@ -232,6 +232,36 @@ def check_test_sh():
     ok("verifier: ctrf path, reward on every path, sealed reward dir, process group kill")
 
 
+def check_anti_cheat():
+    harness = text("tests/harness.py")
+    needed = [
+        ("_purge_foreign_state", "no routine that clears state outside the device"),
+        ("SCRATCH_DIRS", "does not name the directories an unprivileged user can write"),
+        ("/dev/shm", "does not clear shared memory between boots"),
+        ("stray_processes_killed", "does not count what it had to kill"),
+        ("os.chmod(dst, 0o444)", "hands the program a writable copy of itself"),
+    ]
+    for needle, why in needed:
+        if needle not in harness:
+            bad("anti cheat", why)
+    purge_calls = harness.count("self._purge_foreign_state()")
+    if purge_calls < 3:
+        bad("anti cheat", "state is cleared %d times, expected before the first boot, "
+                          "on every reset and at the end" % purge_calls)
+    if "self._work = None" not in harness:
+        bad("anti cheat", "the working directory is not rebuilt for each boot")
+    if "if self._work is None:" not in harness:
+        bad("anti cheat", "the working directory is not recreated lazily per boot")
+    shipped = read("environment/tools/harness.py")
+    if shipped != read("tests/harness.py"):
+        bad("anti cheat", "the driver given to the agent differs from the one that grades")
+    for name in ("device.py", "scoring.py"):
+        if read("environment/tools/" + name) != read("tests/" + name):
+            bad("anti cheat", "environment/tools/%s differs from the graded copy" % name)
+    ok("anti cheat: resets clear files, shared memory and escaped processes; "
+       "agent copies of the driver and metrics match the graded ones")
+
+
 def check_environment_is_clean():
     for dirpath, _dirnames, filenames in os.walk(os.path.join(ROOT, "environment")):
         for name in filenames:
@@ -270,6 +300,7 @@ def main():
     check_toml(toml)
     check_dockerfiles()
     check_test_sh()
+    check_anti_cheat()
     check_environment_is_clean()
     check_paths_agree()
     for line in CHECKED:

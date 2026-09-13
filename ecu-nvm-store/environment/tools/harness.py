@@ -17,11 +17,19 @@ import subprocess
 import tempfile
 import time
 
+import ctypes
+
 import device
 
 TICK_MS = 10.0
 RUN_USER = "runner"
 VERIFY_READS_PER_TICK = 4
+
+# Everywhere an unprivileged process could leave something behind that a later
+# boot could read. It has nothing else to write to: every other directory in the
+# image belongs to root, and the one holding the verdict is mode 700.
+SCRATCH_DIRS = ("/tmp", "/var/tmp", "/dev/shm", "/dev/mqueue")
+IPC_RMID = 0
 
 
 class StoreFailure(Exception):
@@ -54,6 +62,13 @@ class Runner:
         self.requests = list(scenario["requests"])
         self.cuts = list(scenario.get("cuts") or [])
         self.dev = device.Flash(scenario["device"])
+        self._run_uid = None
+        self._run_gid = None
+        self._last_pid = -1
+        if os.geteuid() == 0:
+            entry = pwd.getpwnam(RUN_USER)
+            self._run_uid = entry.pw_uid
+            self._run_gid = entry.pw_gid
         self.proc = None
         self._work = None
         self._dst = None
@@ -97,28 +112,134 @@ class Runner:
             "violations": [],
             "n_blocks": n,
             "n_requests": len(self.requests),
+            "foreign_files_removed": 0,
+            "stray_processes_killed": 0,
         }
 
     # ----------------------------------------------------------- process side
 
     def _prepare_workdir(self):
+        """A boot starts in a directory that has never been written to.
+
+        The program is handed a read only copy of itself, so it cannot keep
+        anything in its own source either.
+        """
         work = tempfile.mkdtemp(prefix="nvm_")
         dst = os.path.join(work, "nvm_store.py")
         shutil.copyfile(self.program_path, dst)
-        if os.geteuid() == 0:
-            pw = pwd.getpwnam(RUN_USER)
-            os.chown(work, pw.pw_uid, pw.pw_gid)
-            os.chown(dst, pw.pw_uid, pw.pw_gid)
+        if self._run_uid is not None:
+            os.chown(work, self._run_uid, self._run_gid)
+            os.chown(dst, 0, 0)
+        os.chmod(dst, 0o444)
         os.chmod(work, 0o700)
         return work, dst
+
+    def _purge_ipc(self, uid):
+        """Remove any shared memory, queue or semaphore the program left."""
+        removed = 0
+        try:
+            libc = ctypes.CDLL(None, use_errno=True)
+        except OSError:
+            return removed
+        table = (("/proc/sysvipc/shm", libc.shmctl, 1),
+                 ("/proc/sysvipc/msg", libc.msgctl, 1),
+                 ("/proc/sysvipc/sem", libc.semctl, 2))
+        for path, call, owner_column in table:
+            try:
+                with open(path) as handle:
+                    rows = handle.read().splitlines()[1:]
+            except OSError:
+                continue
+            for row in rows:
+                fields = row.split()
+                if len(fields) < 6:
+                    continue
+                try:
+                    ident = int(fields[1])
+                    owner = int(fields[4 if owner_column == 1 else 3])
+                except ValueError:
+                    continue
+                if owner != uid:
+                    continue
+                try:
+                    if call is libc.semctl:
+                        call(ident, 0, IPC_RMID, 0)
+                    else:
+                        call(ident, IPC_RMID, None)
+                    removed += 1
+                except OSError:
+                    continue
+        return removed
+
+    def _purge_foreign_state(self):
+        """Leave nothing but the flash image for the next boot to find.
+
+        A reset on a real part takes memory with it and leaves only the flash.
+        Here that has to be enforced rather than assumed: the working directory is
+        thrown away and rebuilt, every place the unprivileged user can write is
+        emptied of its files, the ipc objects it owns are removed, and anything it
+        left running is killed even if that process escaped its process group with
+        setsid. Without this a program could keep the blocks in a file or in a
+        surviving daemon and never touch the device at all.
+        """
+        uid = self._run_uid
+        if uid is not None:
+            for entry in os.listdir("/proc"):
+                if not entry.isdigit():
+                    continue
+                pid = int(entry)
+                try:
+                    if os.stat("/proc/" + entry).st_uid != uid:
+                        continue
+                    with open("/proc/%s/stat" % entry, "rb") as handle:
+                        state = handle.read().rsplit(b") ", 1)[1][:1]
+                    os.kill(pid, signal.SIGKILL)
+                except (OSError, ValueError, IndexError):
+                    continue
+                # a process already killed with the group is waiting to be reaped,
+                # so only a live one counts as something the program left behind
+                if state != b"Z" and pid != self._last_pid:
+                    self.log["stray_processes_killed"] += 1
+            for base in SCRATCH_DIRS:
+                try:
+                    names = os.listdir(base)
+                except OSError:
+                    continue
+                for name in names:
+                    path = os.path.join(base, name)
+                    if self._work and os.path.abspath(path) == os.path.abspath(self._work):
+                        continue  # the working directory is accounted for below
+                    try:
+                        if os.lstat(path).st_uid != uid:
+                            continue
+                    except OSError:
+                        continue
+                    if os.path.isdir(path) and not os.path.islink(path):
+                        shutil.rmtree(path, ignore_errors=True)
+                    else:
+                        try:
+                            os.unlink(path)
+                        except OSError:
+                            continue
+                    self.log["foreign_files_removed"] += 1
+            self.log["foreign_files_removed"] += self._purge_ipc(uid)
+        if self._work:
+            shutil.rmtree(self._work, ignore_errors=True)
+            self._work = None
+            self._dst = None
 
     def _spawn(self):
         if self._work is None:
             self._work, self._dst = self._prepare_workdir()
+        scratch = os.path.join(self._work, "tmp")
+        os.mkdir(scratch)
+        if self._run_uid is not None:
+            os.chown(scratch, self._run_uid, self._run_gid)
         env = {"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": self._work,
+               "TMPDIR": scratch, "TMP": scratch, "TEMP": scratch,
                "PYTHONDONTWRITEBYTECODE": "1", "PYTHONUNBUFFERED": "1"}
         kwargs = {}
-        if os.geteuid() == 0:
+        if self._run_uid is not None:
             kwargs["user"] = RUN_USER
             kwargs["group"] = RUN_USER
             kwargs["extra_groups"] = []
@@ -135,6 +256,7 @@ class Runner:
         if self.proc is None:
             return
         proc, self.proc = self.proc, None
+        self._last_pid = proc.pid
         try:
             proc.stdin.close()
         except Exception:
@@ -432,6 +554,7 @@ class Runner:
     def _handle_cut(self, kind):
         while True:
             self._kill()
+            self._purge_foreign_state()
             self.dev.power_off()
             self.log["cuts"].append({"tick": self.tick, "op": kind})
             allowed = self._allowed_after_reset()
@@ -487,6 +610,7 @@ class Runner:
         start = time.monotonic()
         self._deadline = start + self.timeout_s
         try:
+            self._purge_foreign_state()
             self._boot()
             self._verify([{None} for _ in self.blocks], resync=False)
             while True:
@@ -511,15 +635,15 @@ class Runner:
                 self._handle_cut(str(c))
         finally:
             self._kill()
+            self._purge_foreign_state()
             if self._err not in (None, subprocess.DEVNULL):
                 self._err.close()
-            if self._work:
-                shutil.rmtree(self._work, ignore_errors=True)
         self.log["wall_s"] = round(time.monotonic() - start, 2)
         self.log["erases"] = self.dev.n_erase
         self.log["programs"] = self.dev.n_program
         self.log["reads"] = self.dev.n_read
         self.log["erase_counts"] = list(self.dev.erase_counts)
+        self.log["isolated"] = self._run_uid is not None
         return self.log
 
 

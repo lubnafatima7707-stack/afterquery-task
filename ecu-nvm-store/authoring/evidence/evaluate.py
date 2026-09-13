@@ -79,6 +79,10 @@ OTHERS = [
      "shortcut", "quick attempt: memory mirror, ack on arrival, sector dump on fill"),
     ("baseline_skeleton", os.path.join(ROOT, "environment", "tools", "skeleton_store.py"),
      "baseline", "the shipped skeleton, which answers every read with NONE and never acknowledges"),
+    ("cheat_file_backed", os.path.join(EVIDENCE, "cheats", "file_backed.py"),
+     "cheat", "keeps the blocks in a file and a surviving daemon instead of on the device"),
+    ("cheat_memory_only", os.path.join(EVIDENCE, "cheats", "ram_only.py"),
+     "cheat", "keeps the blocks in memory and never touches the device"),
 ]
 
 
@@ -90,18 +94,23 @@ def scenarios():
     return out
 
 
-def run(program, cases, timeout_s=120.0):
+def run(program, cases, timeout_s=90.0):
     per, failures = [], {}
+    foreign = stray = 0
     for case in cases:
         try:
             log = harness.run_scenario(program, case, timeout_s=timeout_s)
         except harness.StoreFailure as exc:
             failures[case["name"]] = str(exc)
             continue
+        foreign += log["foreign_files_removed"]
+        stray += log["stray_processes_killed"]
         per.append(scoring.scenario_metrics(log))
     metrics = scoring.aggregate(per)
     metrics["failed_scenarios"] = failures
     metrics["failed_bars"] = scoring.failed_bars(metrics)
+    metrics["foreign_files_removed"] = foreign
+    metrics["stray_processes_killed"] = stray
     if failures:
         metrics["failed_bars"] = sorted(set(metrics["failed_bars"]) | {"completion"})
     return metrics
@@ -157,13 +166,14 @@ def main():
                     scoring.BARS["tick_overruns"], scoring.BARS["max_ack_latency_ticks"],
                     scoring.BARS["erases_per_100_writes"]))
     lines.append("| solver | kind | integrity | mount ms | overruns | ack ticks |"
-                 " unacked | erases/100 | bars failed |")
-    lines.append("|---|---|---|---|---|---|---|---|---|")
+                 " unacked | erases/100 | state left outside the part | bars failed |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|")
     for name, kind, _note, m in rows:
-        lines.append("| %s | %s | %d | %.3f | %d | %d | %d | %.3f | %s |"
+        lines.append("| %s | %s | %d | %.3f | %d | %d | %d | %.3f | %d files, %d processes | %s |"
                      % (name, kind, m["integrity_violations"], m["max_mount_ms"],
                         m["tick_overruns"], m["max_ack_latency_ticks"],
                         m["unacked_at_end"], m["erases_per_100_writes"],
+                        m.get("foreign_files_removed", 0), m.get("stray_processes_killed", 0),
                         ", ".join(m["failed_bars"]) or "none"))
     lines.append("")
     lines.append("Violation kinds per solver, and the scenarios a solver failed to finish:\n")

@@ -93,6 +93,19 @@ It is empty as shipped and every value it accepts only removes a piece of the de
 `tests/harness.py` keeps the flash image, the clock, the resets and every counter in the verifier
 process, so the program under test can reach none of them: it is started as an unprivileged user in
 an empty directory, in its own session, and its process group is killed in a finally block.
+
+A reset has to take everything but the flash with it, and that is enforced rather than assumed. An
+earlier version of this harness created the working directory once per scenario and reused it across
+resets, which a review defeated with a thirty line probe that kept the blocks in a file beside the
+program, acknowledged on arrival and read the file back at MOUNT: it cleared every bar. Now each boot
+gets a new working directory and a read only copy of the program, and before it starts the harness
+empties every directory the unprivileged user can write to, removes the shared memory, queues and
+semaphores it owns, and kills every process it still has running, including one that escaped the
+process group with setsid. That probe is kept as `authoring/evidence/cheats/file_backed.py`, widened
+to try the working directory, `/tmp`, `/var/tmp`, `/dev/shm`, the home directory, `TMPDIR`, and a
+daemon reachable over an abstract socket. It now loses 636 blocks, the same as a store that keeps
+everything in memory, and the run report records the 132 files and 46 processes taken away from it.
+Both correct stores leave nothing behind at all.
 `tests/test.sh` makes `/logs/verifier` root owned and mode 700 before pytest starts, and `/tests` is
 baked with `chmod -R go-rwx`, so neither the program nor anything it forks can touch the reward or
 read the graded scenarios. A cheat that writes to `/logs/verifier/reward.txt` and globs `/tests`
