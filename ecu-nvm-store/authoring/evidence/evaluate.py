@@ -85,6 +85,8 @@ OTHERS = [
      "cheat", "keeps the blocks in memory and never touches the device"),
     ("cheat_run_lock_journal", os.path.join(EVIDENCE, "cheats", "run_lock_journal.py"),
      "cheat", "the probe that beat the old purge: journals into /run/lock, which no hand written list named"),
+    ("cheat_lazy_materialize", os.path.join(EVIDENCE, "cheats", "lazy_materialize.py"),
+     "cheat", "the probe that beat the live image check: a daemon that re execs without the marker, an abstract socket, and values materialised into blank pages after the reset"),
 ]
 
 

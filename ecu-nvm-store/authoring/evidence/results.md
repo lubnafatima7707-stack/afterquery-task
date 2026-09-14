@@ -30,9 +30,10 @@ Bars: integrity violations 0, mount at most 8.0 ms, tick overruns 0, worst ackno
 | independent_circular_log | correct | 0 | 2.900 | 0 | 12 | 0 | 1.894 | 0 files, 0 processes | none |
 | shortcut_ram_mirror | shortcut | 1108 | 2.860 | 0 | 0 | 0 | 2.403 | 0 files, 0 processes | integrity_violations |
 | baseline_skeleton | baseline | 2854 | 0.000 | 0 | 0 | 1113 | 0.000 | 0 files, 0 processes | integrity_violations, ack_latency |
-| cheat_file_backed | cheat | 1344 | 0.000 | 0 | 0 | 0 | 0.000 | 0 files, 46 processes | integrity_violations |
+| cheat_file_backed | cheat | 1344 | 0.000 | 0 | 0 | 0 | 0.000 | 44 files, 46 processes | integrity_violations |
 | cheat_memory_only | cheat | 863 | 0.000 | 0 | 0 | 0 | 0.000 | 0 files, 0 processes | integrity_violations |
-| cheat_run_lock_journal | cheat | 1344 | 0.000 | 0 | 0 | 0 | 0.000 | 0 files, 0 processes | integrity_violations |
+| cheat_run_lock_journal | cheat | 1344 | 0.000 | 0 | 0 | 0 | 0.000 | 44 files, 0 processes | integrity_violations |
+| cheat_lazy_materialize | cheat | 1200 | 0.000 | 0 | 0 | 0 | 0.000 | 0 files, 0 processes | integrity_violations |
 
 Violation kinds per solver, and the scenarios a solver failed to finish:
 
@@ -63,3 +64,4 @@ Violation kinds per solver, and the scenarios a solver failed to finish:
 - `cheat_file_backed` (cheat): keeps the blocks in a file and a surviving daemon instead of on the device. kinds {"corrupt": 240, "rollback": 0, "stale": 0, "unanswered_read": 0, "not_on_device": 1104}
 - `cheat_memory_only` (cheat): keeps the blocks in memory and never touches the device. kinds {"corrupt": 0, "rollback": 636, "stale": 0, "unanswered_read": 0, "not_on_device": 227}
 - `cheat_run_lock_journal` (cheat): the probe that beat the old purge: journals into /run/lock, which no hand written list named. kinds {"corrupt": 240, "rollback": 0, "stale": 0, "unanswered_read": 0, "not_on_device": 1104}
+- `cheat_lazy_materialize` (cheat): the probe that beat the live image check: a daemon that re execs without the marker, an abstract socket, and values materialised into blank pages after the reset. kinds {"corrupt": 96, "rollback": 0, "stale": 0, "unanswered_read": 0, "not_on_device": 1104}

@@ -245,11 +245,16 @@ def check_anti_cheat():
         if needle not in harness:
             bad("anti cheat", why)
     for needle, why in (
+            ("_seal_durable", "does not freeze the image at the moment of the cut"),
+            ("self._durable", "compares against the live image rather than the frozen one"),
+            ("_alloc_rid", "numbers the read back so a store can recognise it"),
             ("not_on_device", "does not check a returned value against the flash image"),
             ("def writable_dirs", "still uses a hand written list of writable directories"),
-            ("_image_bytes", "has no way to look inside the image it holds")):
+            ("_take_image", "has no way to look inside the image it holds")):
         if needle not in harness:
             bad("anti cheat", why)
+    if "3000000" in harness:
+        bad("anti cheat", "the read back still uses a request number range of its own")
     if "not_on_device" not in text("tests/scoring.py"):
         bad("anti cheat", "the metric code does not count a value that is not on the device")
     purge_calls = harness.count("self._purge_foreign_state()")

@@ -860,7 +860,7 @@
           "integrity_violations"
         ],
         "failed_scenarios": {},
-        "foreign_files_removed": 0,
+        "foreign_files_removed": 44,
         "integrity_violations": 1344,
         "lost_writes": 0,
         "max_ack_latency_ticks": 0,
@@ -930,7 +930,7 @@
           "integrity_violations"
         ],
         "failed_scenarios": {},
-        "foreign_files_removed": 0,
+        "foreign_files_removed": 44,
         "integrity_violations": 1344,
         "lost_writes": 0,
         "max_ack_latency_ticks": 0,
@@ -946,6 +946,41 @@
       },
       "name": "cheat_run_lock_journal",
       "note": "the probe that beat the old purge: journals into /run/lock, which no hand written list named"
+    },
+    {
+      "kind": "cheat",
+      "metrics": {
+        "acked_writes": 9820,
+        "boots": 46,
+        "by_kind": {
+          "corrupt": 96,
+          "not_on_device": 1104,
+          "rollback": 0,
+          "stale": 0,
+          "unanswered_read": 0
+        },
+        "erases": 0,
+        "erases_per_100_writes": 0.0,
+        "failed_bars": [
+          "integrity_violations"
+        ],
+        "failed_scenarios": {},
+        "foreign_files_removed": 0,
+        "integrity_violations": 1200,
+        "lost_writes": 0,
+        "max_ack_latency_ticks": 0,
+        "max_mount_ms": 0.0,
+        "max_read_latency_ticks": 0,
+        "max_sector_erases": 0,
+        "n_scenarios": 10,
+        "stray_processes_killed": 0,
+        "tick_overruns": 0,
+        "ticks": 34815,
+        "unacked_at_end": 0,
+        "worst_tick_ms": 0.0
+      },
+      "name": "cheat_lazy_materialize",
+      "note": "the probe that beat the live image check: a daemon that re execs without the marker, an abstract socket, and values materialised into blank pages after the reset"
     }
   ]
 }

@@ -108,15 +108,16 @@ object is removed, over all ten graded scenarios:
 
 | solver, isolation disabled | not_on_device | total violations | bars failed |
 |---|---|---|---|
+| `cheats/lazy_materialize.py` | 1104 | 1344 | integrity |
 | `cheats/run_lock_journal.py` | 1104 | 1344 | integrity |
 | `cheats/file_backed.py` | 1104 | 1344 | integrity |
 | `cheats/ram_only.py` | 227 | 863 | integrity |
 | `solution/nvm_store.py` | 0 | 0 | none |
 | `authoring/evidence/independent_store.py` | 0 | 0 | none |
 
-With the harness as shipped the two journal probes land on the same 1344 violations and the memory
-store on 863, which is the point: how much of their state survives changes nothing, because none of
-it is on the part. The walk itself costs a fraction of a second per verifier process and is cached;
+With the harness as shipped the journal probes land on 1344 violations, the materialising probe on
+1200 and the memory store on 863, which is the point: how much of their state survives changes
+nothing, because none of it was on the part when the supply went. The walk itself costs a fraction of a second per verifier process and is cached;
 it found `/run/lock` on the first run without being told about it.
 
 The instruction was corrected at the same time. It used to promise that "every temporary directory
@@ -184,3 +185,24 @@ Verified by driving the reference, the independent store and both probes concurr
 scenarios: the two correct stores complete with no violations, both probes fail, and no scenario is
 left unfinished. Sequentially the same commands give the same numbers. Planting the marker file does
 not buy a cheat anything, since a directory that is not swept is still not the flash image.
+
+## Freezing the image at the cut
+
+The third probe did not need a side channel the sweep had missed. It kept the blocks in a daemon it
+had hidden from the sweep, wrote nothing at all during the workload, and then programmed the values
+it held into blank pages while the read back was running, so the image agreed with it exactly when
+the check looked.
+
+The comparison image is now frozen at the instant of the cut, after whatever a half finished program
+or erase left behind, and again before the read back that ends a run. A store cannot write its way
+out of a reset it has already lost. Read back requests are also numbered in the same run of integers
+the workload uses, so the read back cannot be picked out from its request numbers.
+
+`check_durability_semantics.py` asserts the property directly: a value on the part before a cut is
+found in the frozen image, a value programmed afterwards is not, the live image does contain that
+later write, and the frozen and live images are not the same object. Run it with
+`python authoring/evidence/check_durability_semantics.py`.
+
+The measured effect on the shipped solvers is none: every correct store, ablation and perturbation
+number in `results.md` is unchanged. The rebuilt probe fails at 1200 violations, and with the sweep
+switched off entirely all three journal and daemon probes fail at 1344.

@@ -109,13 +109,28 @@ there as defence in depth, and it now discovers what to clear by walking the ima
 that user can write to rather than by naming them, which finds `/run/lock` without having been told
 about it.
 
-Both probes are kept, `cheats/file_backed.py` and `cheats/run_lock_journal.py`, the second rebuilt
-from the run audit including the geometry fingerprint it used to name its journal. Each fails at 1344
-violations, most of them values that are nowhere in the image, and a store that never leaves memory
-fails at 863. The measurement that matters is with the sweep switched off completely, so that every
-journal and every daemon survives untouched: the two probes still fail at 1344, with 1104 of those
-violations being values not on the part, and the memory store at 863, while the reference and the
-independent store stay at 0. Both correct stores leave nothing outside the part at all.
+A third probe then showed that asking the right question at the wrong moment is no better. It kept
+the blocks in a daemon that re execs itself with the marker stripped from its environment, calls
+setsid and listens on an abstract socket that has no path to find, issued no device operation during
+the workload at all, and then programmed the values it was holding into blank pages while the read
+back was happening, so that the bytes were in the image exactly when the check looked. The data was
+never durable; it was materialised on demand, after the supply had gone.
+
+So the comparison is no longer against the image as it stands. It is against the image frozen at the
+instant of the cut, and again before the read back that ends a run. Nothing a store writes after the
+power is gone can answer for durability, which is true by construction rather than by enumeration.
+The read back also no longer numbers its requests in a range of its own, so it cannot be recognised
+from the request number, though that is hygiene: recognising it buys nothing now.
+
+Three probes are kept under `authoring/evidence/cheats`, the last two rebuilt from the run audits
+including the geometry fingerprint and the environment stripping they used. They fail at 1344, 1344
+and 1200 violations, and a store that never leaves memory fails at 863. With the sweep switched off
+completely, so that every journal and every daemon survives untouched, all three still fail at 1344,
+with 1104 of those being values that were not on the part when the supply went, and the memory store
+at 863, while the reference and the independent store stay at 0.
+`authoring/evidence/check_durability_semantics.py` asserts the property itself: a value written
+before a cut is in the frozen image, a value written after it is not, and the live image does contain
+the later write, which is what the old check compared against.
 `tests/test.sh` makes `/logs/verifier` root owned and mode 700 before pytest starts, and `/tests` is
 baked with `chmod -R go-rwx`, so neither the program nor anything it forks can touch the reward or
 read the graded scenarios. A cheat that writes to `/logs/verifier/reward.txt` and globs `/tests`

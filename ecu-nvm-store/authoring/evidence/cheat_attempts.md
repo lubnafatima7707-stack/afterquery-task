@@ -116,3 +116,42 @@ because its failure is not only a wrong value. On one of the ten scenarios it re
 half programmed page, asks for something the device rejects, and the process exits mid tick, so it
 fails both the completion test and the integrity bar. A checksum over the whole record is what turns
 a torn page into a page that is skipped.
+
+## The third hole: the right question asked at the wrong moment
+
+The next probe passed with reward 1 against a harness that checked a returned value against the flash
+image as it stood when the read was answered. It combined three things, and only the last one
+mattered:
+
+1. a daemon that re execs itself with every `NVM_` variable stripped, so matching on the run's own
+   marker does not recognise it, calls setsid to leave the process group, and listens on an abstract
+   unix socket, which has no path for a directory walk and is not an ipc object for the purge
+2. recognising the read back from its request numbers, which used to start at three million
+3. **materialising on demand**: no device operation during the workload at all, every write
+   acknowledged out of the daemon's memory, and then, once the read back began, the held values
+   programmed into blank pages so the bytes were in the image exactly when the check looked
+
+The reported metrics say it plainly: 0 erases, 0.0 ms of mount time, 0 tick acknowledge latency,
+across 36 power cuts.
+
+The repair is to compare against the image **frozen at the instant of the cut**, and again before the
+read back that ends a run, rather than against the image as it stands. Power is already gone at that
+point, so nothing written afterwards is durable by definition and nothing written afterwards can
+satisfy the check. Request numbers for the read back now continue the same run of integers the
+workload uses, which removes the fingerprint in (2), though with the freeze in place recognising the
+read back buys nothing.
+
+The probe is rebuilt as `cheats/lazy_materialize.py`, including the re exec, the abstract socket and
+the geometry fingerprint, and it fails at 1200 violations.
+
+### What is measured here and what is not
+
+Honestly: the rebuilt probe carries its values across resets perfectly, which is measurable (it
+records no rollbacks at all, so its daemon does survive and does answer), but its materialising is
+less well timed than the original's, so running it against the old check does not reproduce a clean
+pass. That half of the comparison is therefore not evidence I can show. What is shown instead, and
+what the fix actually rests on, is the mechanism itself:
+`authoring/evidence/check_durability_semantics.py` freezes an image, programs a value afterwards, and
+asserts that the later value is absent from the frozen image, present in the live image, and that the
+two are not the same object. That is the whole of the property, and it is checked without going
+through any solver.

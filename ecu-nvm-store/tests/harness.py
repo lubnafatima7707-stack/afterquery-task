@@ -153,7 +153,8 @@ class Runner:
         self.pending = {}
         self.open_reads = {}
 
-        self._image_blob = None
+        self._durable = b""
+        self._next_rid = 1
         self.tick = 0
         self.wclock = 0
         self.next_req = 0
@@ -539,8 +540,13 @@ class Runner:
         self.log["violations"].append(
             {"kind": kind, "block": block, "tick": self.tick, "detail": detail})
 
+    def _note_rid(self, rid):
+        if rid >= self._next_rid:
+            self._next_rid = rid + 1
+
     def _deliver_write(self, req):
         rid = int(req["req"])
+        self._note_rid(rid)
         block = int(req["block"])
         value = bytes.fromhex(req["hex"])
         order = int(req["order"])
@@ -558,11 +564,22 @@ class Runner:
                                      from_device)
         return "READ %d %d\n" % (rid, block)
 
-    def _image_bytes(self):
-        """The whole flash image, as the harness holds it, for evidence checks."""
-        if self._image_blob is None:
-            self._image_blob = b"".join(bytes(page) for page in self.dev.image)
-        return self._image_blob
+    def _take_image(self):
+        """The whole flash image exactly as it stands at this instant."""
+        return b"".join(bytes(page) for page in self.dev.image)
+
+    def _seal_durable(self):
+        """Freeze what the part held, so later writes cannot answer for it.
+
+        Taken at the moment the supply goes, after whatever a half finished
+        program or erase left behind, and again before the read back at the end of
+        a run. A value handed back afterwards is checked against this and not
+        against the live image, because a store that kept the blocks elsewhere can
+        program them into blank pages during the read back and make the live image
+        agree with it. Nothing it writes after this point is durable, by
+        definition: the power was already gone.
+        """
+        self._durable = self._take_image()
 
     def _close_read(self, rd, token):
         if token == "BUSY":
@@ -583,9 +600,9 @@ class Runner:
             # fail, whether that somewhere is a file, a daemon or a place the
             # harness never thought to clear.
             checked = rd.from_device or value == self.committed[rd.block]
-            if checked and value not in self._image_bytes():
+            if checked and value not in self._durable:
                 self._note("not_on_device", rd.block,
-                           "returned %s, which is nowhere in the flash image"
+                           "returned %s, which was not on the part when the supply went"
                            % value.hex()[:16])
         if value not in rd.allowed:
             shown = "NONE" if value is None else value.hex()[:16]
@@ -714,6 +731,7 @@ class Runner:
         return allowed
 
     def _handle_cut(self, kind):
+        self._seal_durable()
         while True:
             self._kill()
             self._purge_foreign_state()
@@ -730,14 +748,17 @@ class Runner:
             except _Cut as again:
                 kind = str(again)
 
+    def _alloc_rid(self):
+        rid = self._next_rid
+        self._next_rid += 1
+        return rid
+
     def _verify(self, allowed, resync):
         todo = list(range(len(self.blocks)))
-        base = 3000000 + self.tick * 100
-        self._image_blob = None
         while todo or self.open_reads:
             lines = []
             for block in todo[:VERIFY_READS_PER_TICK]:
-                lines.append(self._deliver_read(base + block, block, allowed[block],
+                lines.append(self._deliver_read(self._alloc_rid(), block, allowed[block],
                                                 "verify", from_device=resync))
             todo = todo[VERIFY_READS_PER_TICK:]
             self._exchange(lines)
@@ -760,6 +781,7 @@ class Runner:
                     lines.append(self._deliver_write(req))
                 else:
                     block = int(req["block"])
+                    self._note_rid(int(req["rid"]))
                     lines.append(self._deliver_read(int(req["rid"]), block,
                                                     {self.latest[block]}, "work"))
         if (self.armed is None and self.next_cut < len(self.cuts)
@@ -789,6 +811,7 @@ class Runner:
                 except _Cut as c:
                     self._handle_cut(str(c))
             self.log["unacked_at_end"] = len(self.pending)
+            self._seal_durable()
             allowed = self._allowed_after_reset()
             for block in range(len(self.blocks)):
                 if self.latest[block] is not None:
