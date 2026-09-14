@@ -25,27 +25,44 @@ UNITS = {
                "t_read_ms": 0.02, "t_program_ms": 0.4, "erase_ticks": 3},
     "unit_c": {"sectors": 20, "pages_per_sector": 64, "page_bytes": 256,
                "t_read_ms": 0.025, "t_program_ms": 0.35, "erase_ticks": 4},
-    "unit_d": {"sectors": 16, "pages_per_sector": 128, "page_bytes": 128,
+    "unit_d": {"sectors": 16, "pages_per_sector": 80, "page_bytes": 128,
                "t_read_ms": 0.02, "t_program_ms": 0.35, "erase_ticks": 3},
 }
+
+# The live set is sized to fill about this much of every part. That is what makes
+# the choice of which sector to reclaim matter: at seven pages in ten occupied, a
+# sector picked without looking at how much of it is still live costs several
+# times the copying of one picked well, and the erase budget is where that shows.
+TARGET_FILL = 0.70
+# Reading every block back after every reset would dominate a run, so a sample
+# fixed by the generator is checked at each reset and the whole set at the end.
+VERIFY_SAMPLE = 96
+
+
+def block_count(device):
+    usable = device["sectors"] * (device["pages_per_sector"] - 2)
+    return int(TARGET_FILL * usable)
 
 LIMITS = {"tick_budget_ms": 2.0, "mount_budget_ms": 8.0,
           "read_deadline_ticks": 8, "drain_ticks": 200}
 
-N_BLOCKS = 24
 LENGTHS = [8, 12, 16, 20, 24, 28, 32]
+# a fifth of the blocks take four writes in five, so a sector left alone goes
+# mostly dead while a sector full of hot blocks stays mostly live
+HOT_SHARE = 0.20
+HOT_WRITES = 0.80
 
 
-def build_requests(rng, n_writes, read_share, burst_chance):
-    lengths = [rng.choice(LENGTHS) for _ in range(N_BLOCKS)]
+def build_requests(rng, n_writes, read_share, burst_chance, n_blocks):
+    lengths = [rng.choice(LENGTHS) for _ in range(n_blocks)]
     requests = []
     at = 1
     rid = 1
     order = 0
-    hot = rng.sample(range(N_BLOCKS), 3)
+    hot = rng.sample(range(n_blocks), max(1, int(HOT_SHARE * n_blocks)))
     recent = []
     counter = 1
-    for block in range(N_BLOCKS):
+    for block in range(n_blocks):
         value = counter.to_bytes(4, "big") + bytes(rng.randrange(256)
                                                    for _ in range(lengths[block] - 4))
         counter += 1
@@ -63,11 +80,13 @@ def build_requests(rng, n_writes, read_share, burst_chance):
             burst -= 1
         at += gap
         if recent and rng.random() < read_share:
-            block = rng.choice(recent[-8:]) if rng.random() < 0.7 else rng.randrange(N_BLOCKS)
+            block = (rng.choice(recent[-8:]) if rng.random() < 0.7
+                     else rng.randrange(n_blocks))
             requests.append({"at": at, "kind": "R", "rid": rid, "block": block})
             rid += 1
             continue
-        block = rng.choice(hot) if rng.random() < 0.4 else rng.randrange(N_BLOCKS)
+        block = (rng.choice(hot) if rng.random() < HOT_WRITES
+                 else rng.randrange(n_blocks))
         value = counter.to_bytes(4, "big") + bytes(rng.randrange(256)
                                                   for _ in range(lengths[block] - 4))
         counter += 1
@@ -106,39 +125,45 @@ def build_cuts(rng, n_requests, n_cuts, first_at=0.08):
 def make(name, seed, device, n_writes, n_cuts, read_share=0.22,
          burst_chance=0.05, weak=None):
     rng = random.Random(seed)
-    lengths, requests = build_requests(rng, n_writes, read_share, burst_chance)
+    n_blocks = block_count(device)
+    lengths, requests = build_requests(rng, n_writes, read_share, burst_chance, n_blocks)
     dev = dict(device)
     if weak:
         dev["weak_pages"] = weak
         dev["weak_from"] = 1
+    first_at = max(0.08, 1.25 * n_blocks / len(requests))
+    cuts = build_cuts(rng, len(requests), n_cuts, first_at)
+    sample = min(VERIFY_SAMPLE, n_blocks)
+    for cut in cuts:
+        cut["verify"] = sorted(rng.sample(range(n_blocks), sample))
     return {"name": name, "seed": seed, "device": dev, "limits": dict(LIMITS),
-            "blocks": lengths, "requests": requests,
-            "cuts": build_cuts(rng, len(requests), n_cuts)}
+            "blocks": lengths, "requests": requests, "cuts": cuts,
+            "first_verify": sorted(rng.sample(range(n_blocks), sample))}
 
 
 def dev_scenarios():
     return [
-        make("dev_plain", 11001, DEV_DEVICE, 260, 2),
-        make("dev_resets", 11002, DEV_DEVICE, 520, 5, burst_chance=0.09),
-        make("dev_worn", 11003, DEV_DEVICE, 1400, 5,
+        make("dev_plain", 11001, DEV_DEVICE, 2200, 2),
+        make("dev_resets", 11002, DEV_DEVICE, 3200, 5, burst_chance=0.09),
+        make("dev_worn", 11003, DEV_DEVICE, 4200, 5,
              weak={"5": [0, 1, 2, 37, 38]}),
     ]
 
 
 def hidden_scenarios():
     return [
-        make("h01_a_quiet", 22001, UNITS["unit_a"], 520, 3),
-        make("h02_a_bursts", 22002, UNITS["unit_a"], 760, 5, burst_chance=0.12),
-        make("h03_a_worn", 22003, UNITS["unit_a"], 1600, 6,
+        make("h01_a_quiet", 22001, UNITS["unit_a"], 2600, 3),
+        make("h02_a_bursts", 22002, UNITS["unit_a"], 3400, 5, burst_chance=0.12),
+        make("h03_a_worn", 22003, UNITS["unit_a"], 4600, 6,
              weak={"9": [0, 1, 2, 3, 41]}),
-        make("h04_b_quiet", 22004, UNITS["unit_b"], 600, 2),
-        make("h05_b_resets", 22005, UNITS["unit_b"], 980, 6, burst_chance=0.1),
-        make("h06_c_wide", 22006, UNITS["unit_c"], 620, 4, read_share=0.3),
-        make("h07_c_worn", 22007, UNITS["unit_c"], 1700, 6,
+        make("h04_b_quiet", 22004, UNITS["unit_b"], 2800, 2),
+        make("h05_b_resets", 22005, UNITS["unit_b"], 4200, 6, burst_chance=0.1),
+        make("h06_c_wide", 22006, UNITS["unit_c"], 3000, 4, read_share=0.3),
+        make("h07_c_worn", 22007, UNITS["unit_c"], 4800, 6,
              weak={"3": [0, 1, 17], "14": [2, 3, 4, 5, 33, 34]}),
-        make("h08_d_deep", 22008, UNITS["unit_d"], 900, 4, burst_chance=0.08),
-        make("h09_d_reads", 22009, UNITS["unit_d"], 640, 6, read_share=0.34),
-        make("h10_a_long", 22010, UNITS["unit_a"], 1500, 7, burst_chance=0.07,
+        make("h08_d_deep", 22008, UNITS["unit_d"], 3600, 4, burst_chance=0.08),
+        make("h09_d_reads", 22009, UNITS["unit_d"], 3000, 6, read_share=0.34),
+        make("h10_a_long", 22010, UNITS["unit_a"], 5200, 7, burst_chance=0.07,
              weak={"6": [1, 2, 19, 20, 55]}),
     ]
 
@@ -146,8 +171,8 @@ def hidden_scenarios():
 def check_feasible(sc):
     """Refuse to write a scenario the bars could not be met on.
 
-    Every one of these is a way a generated scenario could be unwinnable or
-    degenerate rather than hard, so it raises instead of warning.
+    Each of these is a way the scenario could be unwinnable or degenerate rather
+    than hard, so it raises instead of warning.
     """
     dev = sc["device"]
     sectors = dev["sectors"]
@@ -155,63 +180,66 @@ def check_feasible(sc):
     page_bytes = dev["page_bytes"]
     t_read = dev["t_read_ms"]
     t_prog = dev["t_program_ms"]
-    erase_ticks = dev["erase_ticks"]
     limits = sc["limits"]
     budget = limits["tick_budget_ms"]
     mount_bar = limits["mount_budget_ms"]
     blocks = sc["blocks"]
     weak = {int(k) for k in (dev.get("weak_pages") or {})}
     name = sc["name"]
+    writes = sum(1 for r in sc["requests"] if r["kind"] == "W")
 
     def need(ok, why):
         if not ok:
             raise SystemExit("%s is not winnable as generated: %s" % (name, why))
 
-    # a record has to fit in a page with room for a header and a checksum
     need(max(blocks) + 12 <= page_bytes,
          "a %d byte block does not fit a %d byte page" % (max(blocks), page_bytes))
-    # the live set plus slack has to fit in one sector, so compacting forward is possible
-    need(pages - 2 - len(blocks) >= 24,
-         "only %d pages per sector are left for new records" % (pages - 2 - len(blocks)))
-    # and that leaves room to stay inside the erase bar with a compaction design
-    per_erase = pages - 2 - len(blocks)
-    need(100.0 / per_erase <= 0.7 * 6.0,
-         "a compaction design would need %.2f erases per 100 writes" % (100.0 / per_erase))
-    # enough sectors survive wear to keep rotating
-    need(sectors - len(weak) >= 8,
-         "only %d sectors are not worn" % (sectors - len(weak)))
-    # the mount bar has to be reachable by scanning two sectors and the headers,
-    # and has to be out of reach of scanning the whole part, or it measures nothing
-    two_sectors = 2 * pages * t_read + sectors * t_read
+
+    usable = (sectors - len(weak)) * (pages - 2)
+    fill = len(blocks) / float(usable)
+    need(0.55 <= fill <= 0.80,
+         "the live set fills %.2f of the part, which is outside the band the bars "
+         "were calibrated for" % fill)
+
+    # a sector picked well is mostly dead, so copying out of it has to be
+    # affordable: with the part this full, each new record costs about
+    # fill / (1 - fill) copies, and that plus the write itself has to fit the tick
+    copies = fill / (1.0 - fill)
+    ops_per_tick = (writes / float(max(1, writes * 3))) * (1.0 + copies)
+    need(ops_per_tick * t_prog <= 0.5 * budget,
+         "keeping up would need %.2f ms of the %.1f ms tick" % (ops_per_tick * t_prog, budget))
+
+    # the mount has to be reachable with a checkpoint and a bounded tail, and out
+    # of reach of reading the whole part, or it measures nothing
+    directory = len(blocks) * 2.0 / page_bytes          # pages of block to page map
+    reachable = (sectors + directory + 96) * t_read
     whole_part = sectors * pages * t_read
-    need(two_sectors <= 0.8 * mount_bar,
-         "scanning two sectors already costs %.2f ms of the %.1f ms mount" % (two_sectors, mount_bar))
-    need(whole_part > 1.5 * mount_bar,
-         "scanning the whole part costs only %.2f ms, so the mount bar measures nothing"
+    need(reachable <= 0.7 * mount_bar,
+         "a checkpoint and a short tail already cost %.2f ms of the %.1f ms mount"
+         % (reachable, mount_bar))
+    need(whole_part > 2.0 * mount_bar,
+         "reading the whole part costs only %.2f ms, so the mount bar measures nothing"
          % whole_part)
-    # a tick has to carry several page programs
+
     need(budget / t_prog >= 4.0,
          "a tick only carries %.1f page programs" % (budget / t_prog))
-    # a compaction has to fit well inside the acknowledge bar
-    compaction = (len(blocks) * (t_read + t_prog) / budget + erase_ticks
-                  + pages * t_read / budget + 2)
-    need(compaction <= 0.5 * 35,
-         "a compaction takes %.1f ticks of the 35 tick acknowledge bar" % compaction)
-    # every block is written before the first reset, so nothing is graded on a
-    # block the workload never set
+
     first_cut = min((c["after_request"] for c in sc["cuts"]), default=10 ** 9)
     need(first_cut > len(blocks),
-         "the first reset lands at request %d, before every block has been written"
-         % first_cut)
-    # and the workload has to outlast at least one full rotation, or wear never shows
-    writes = sum(1 for r in sc["requests"] if r["kind"] == "W")
+         "the first reset lands at request %d, before every one of the %d blocks has "
+         "been written" % (first_cut, len(blocks)))
+
+    turns = writes / float(usable)
+    need(turns >= 2.0,
+         "%d writes only turn the part over %.1f times, so reclaim hardly runs" % (writes, turns))
     if weak:
-        need(writes > 1.2 * sectors * per_erase,
-             "%d writes do not bring the rotation back to a worn sector" % writes)
-    return {"name": name, "writes": writes, "per_erase": per_erase,
-            "two_sector_mount_ms": round(two_sectors, 3),
+        need(turns >= 3.0,
+             "%.1f turnovers do not bring the rotation back to a worn sector" % turns)
+    return {"name": name, "blocks": len(blocks), "writes": writes,
+            "fill": round(fill, 3), "turnovers": round(turns, 1),
+            "copies_per_write": round(copies, 2),
+            "reachable_mount_ms": round(reachable, 3),
             "whole_part_mount_ms": round(whole_part, 3),
-            "compaction_ticks": round(compaction, 1),
             "good_sectors": sectors - len(weak)}
 
 
@@ -228,7 +256,8 @@ def main():
     os.makedirs(dev_dir, exist_ok=True)
     os.makedirs(hid_dir, exist_ok=True)
     record = {"dev": [], "hidden": [], "units": UNITS, "dev_device": DEV_DEVICE,
-              "limits": LIMITS, "n_blocks": N_BLOCKS, "block_lengths": LENGTHS}
+              "limits": LIMITS, "target_fill": TARGET_FILL,
+              "verify_sample": VERIFY_SAMPLE, "block_lengths": LENGTHS}
     record["feasibility"] = []
     for sc in dev_scenarios():
         record["feasibility"].append(check_feasible(sc))
