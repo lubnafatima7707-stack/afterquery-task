@@ -32,8 +32,6 @@ environment_mode = "separate"
 
 [verifier.environment]
 network_mode = "no-network"
-cpus = 2
-memory_mb = 4096
 
 [agent]
 timeout_sec = 14400.0

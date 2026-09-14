@@ -1,63 +1,50 @@
-# Hardening in progress: do not submit the tree, submit the zip
+# State of ecu-nvm-store
 
-The easiness screen solved `ecu-nvm-store` three times out of three in 12 to 17
-minutes of a four hour budget, with every bar cleared by a factor of three or
-more, so the task is being made harder. That work is part done and the source
-tree is **not** in a submittable state.
+## What is in the zip now
 
-## What to submit today
+`ecu-nvm-store.zip` is the bundle validated at commit `5ca972b`, restored, plus
+three changes taken from `ddma-radar-targets`, the task that came closest to
+acceptance. Checked from the extracted zip through the real `tests/test.sh`:
+oracle 1 on three consecutive runs with the report written each time, nop 0, the
+independent store 1, and every cheat probe 0.
 
-**Not the zip at the repository root.** It has now been rebuilt from this tree, so
-it carries the half finished work: the oracle scores **0** on it, with 67 integrity
-violations over the ten graded scenarios (18 rollbacks, 13 stale reads, 36 reads
-that never got a value). The other four bars are met on that run, mount 2.73 of
-8.0, no tick overrun, worst acknowledge 7 of 35, 4.936 erases per 100 writes of
-6.0, but two of the six tests fail and the reward is 0.
+The three changes:
 
-The last bundle that passed is the one validated at commit `5ca972b`: oracle 1 on
-three consecutive runs, every probe 0, nop 0, every number in README and task.toml
-re derived from `results.json`. Recover it with
+1. `tests/test.sh` runs `python -m pytest -q -p no:cacheprovider` instead of a
+   bare `pytest`. A `pytest` on the path that is not the one carrying
+   `pytest-json-ctrf` rejects `--ctrf` and exits in well under a second, which is
+   a reward of 0 with a verifier time of zero and no test ever running. That is
+   the shape the reference verification stage reported. `no:cacheprovider` also
+   keeps pytest from writing a cache into `/tests`, which is sealed.
+2. Both Dockerfiles create the unprivileged account with
+   `id -u runner || useradd ...`, so the build cannot fail on an image that
+   already has it. The agent image needs the account because the driver shipped
+   under `/app/tools` drops to it.
+3. `[verifier.environment]` carries only `network_mode`, as the documented
+   template and `ddma` do.
 
-    git show 5ca972b:ecu-nvm-store.zip > ecu-nvm-store-5ca972b.zip
+## What is not in the zip
 
-and submit or rerun against that until the work below lands.
+The work to make the task harder. The easiness screen solved it three times out
+of three in 12 to 17 minutes with every bar cleared by a factor of three or more,
+so the live set was being scaled from 24 blocks to about seven tenths of each
+part, with the reference rewritten as a segment summary log. That work is
+committed at `a4063ba` and is **not finished**: its reference records 67 integrity
+violations over the ten graded scenarios, which is why reference verification
+failed on it.
 
-## What is in the tree and what is wrong with it
+Resume it with
 
-The scale of the task has been raised so that the live set no longer fits in one
-sector and a mount cannot rebuild by scanning:
+    git checkout a4063ba -- ecu-nvm-store/
 
-- the generator sizes the live set to about seven tenths of each part, 694 to 868
-  blocks instead of 24, with a fifth of the blocks taking four writes in five, and
-  2200 to 5200 writes per scenario, which turns the part over two to five times
-- the driver reads back a fixed sample of 96 blocks after each reset and the whole
-  set at the end, and tracks blocks a reset left unchecked as uncertain
-- the reference is rewritten as a segment summary log: a summary written when a
-  sector is closed, a mount of headers plus summaries plus the one open sector
-  (1.9 to 2.6 ms against 20 to 32 ms for reading the whole part), reclaim of the
-  sector holding the fewest live records
+and the remaining work is: fix the stale and unanswered reads, keep copied cold
+data and freshly written hot data in separate open sectors so that choosing the
+sector with the fewest live records actually beats taking them in rotation (5.77
+against 4.54 erases per 100 writes when they share one, which is no separation at
+all), rewrite the independent store at the new scale, rebuild every ablation,
+recalibrate the five bars, and redo the documents.
 
-**The reference is not correct yet.** Over four graded scenarios it records 3
-stale reads and 10 unanswered reads. One real bug was found and fixed on the way,
-worth keeping in mind because it is exactly the kind of mistake the new crux is
-meant to catch: the summary was composed again on every tick it spanned, so a
-record that landed mid seal left chunks that disagreed, a block appeared in none
-of them, and its only copy was erased with its sector.
+## The open question
 
-## The finding that changes the design
-
-Choosing the sector with the fewest live records performs no better than taking
-them in rotation, 5.77 against 4.54 erases per 100 writes. That is not a bug. At
-seven tenths full, with reclaimed copies and new writes sharing one open sector,
-every sector ends up equally live and a victim picker has nothing to choose
-between. What separates a good design from a poor one is keeping copied cold data
-and freshly written hot data in different open sectors. That is the judgement the
-task was missing, and it is the next thing to build.
-
-## Remaining
-
-Fix the stale and unanswered reads, add the hot and cold separation, rewrite the
-independent store at the new scale, rebuild every ablation against the new design,
-recalibrate all five bars from measurements, rerun the three cheats and the
-durability semantics test, then redo README, task.toml and the evidence files and
-revalidate end to end.
+This bundle passes every gate that has run except the easiness screen, which it
+fails by being solved too often. Submitting it again will reach that screen again.

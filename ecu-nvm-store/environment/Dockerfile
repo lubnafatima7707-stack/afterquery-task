@@ -5,7 +5,7 @@ RUN pip install --no-cache-dir numpy==2.0.2
 # tools/harness.py runs the store under this account when it is started by root,
 # which is how the graded run drives it too, so the development checker behaves
 # the same way here as it does in grading
-RUN useradd --create-home --uid 10001 runner
+RUN id -u runner >/dev/null 2>&1 || useradd --create-home --uid 10001 runner
 
 WORKDIR /app
 COPY data/ /app/data/

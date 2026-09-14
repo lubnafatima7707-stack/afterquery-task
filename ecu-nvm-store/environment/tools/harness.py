@@ -152,9 +152,6 @@ class Runner:
         self.history = [set() for _ in range(n)]
         self.pending = {}
         self.open_reads = {}
-        # blocks a reset left unchecked: a later read may return any value the
-        # contract allowed at that reset, until a write settles the block again
-        self.uncertain = {}
 
         self._durable = b""
         self._next_rid = 1
@@ -163,8 +160,6 @@ class Runner:
         self.next_req = 0
         self.next_cut = 0
         self.armed = None
-        self._fired = None
-        self._sample = None
         self.in_mount = False
         self.tick_ms_used = 0.0
         self.mount_ms = 0.0
@@ -498,7 +493,6 @@ class Runner:
             self.dev.cut_during_program(sector, page, data, frac)
         elif kind == "ERASE":
             self.dev.cut_during_erase(sector, frac)
-        self._fired = cut
         self.armed = None
         raise _Cut(kind)
 
@@ -559,7 +553,6 @@ class Runner:
         self.pending[rid] = {"block": block, "value": value, "order": order,
                              "tick": self.tick}
         self.latest[block] = value
-        self.uncertain.pop(block, None)
         self.history[block].add(value)
         for rd in self.open_reads.values():
             if rd.block == block:
@@ -689,7 +682,6 @@ class Runner:
         if cut is not None:
             waited = self.tick - int(cut.get("_armed_tick", self.tick))
             if waited >= int(cut.get("deadline", 900)):
-                self._fired = cut
                 self.armed = None
                 raise _Cut("IDLE")
 
@@ -740,10 +732,6 @@ class Runner:
 
     def _handle_cut(self, kind):
         self._seal_durable()
-        armed = self._fired or {}
-        sample = armed.get("verify")
-        self._sample = (set(range(len(self.blocks))) if sample is None
-                        else {int(b) for b in sample})
         while True:
             self._kill()
             self._purge_foreign_state()
@@ -753,13 +741,9 @@ class Runner:
             self.log["lost_writes"] += len(self.pending)
             self.pending.clear()
             self.open_reads.clear()
-            sample = self._sample
             try:
                 self._boot()
-                self._verify(allowed, resync=True, blocks=sample)
-                for block in range(len(self.blocks)):
-                    if block not in sample:
-                        self.uncertain[block] = set(allowed[block])
+                self._verify(allowed, resync=True)
                 return
             except _Cut as again:
                 kind = str(again)
@@ -769,8 +753,8 @@ class Runner:
         self._next_rid += 1
         return rid
 
-    def _verify(self, allowed, resync, blocks=None):
-        todo = list(range(len(self.blocks))) if blocks is None else list(blocks)
+    def _verify(self, allowed, resync):
+        todo = list(range(len(self.blocks)))
         while todo or self.open_reads:
             lines = []
             for block in todo[:VERIFY_READS_PER_TICK]:
@@ -779,11 +763,10 @@ class Runner:
             todo = todo[VERIFY_READS_PER_TICK:]
             self._exchange(lines)
         if resync:
-            for block in todo:
+            for block in range(len(self.blocks)):
                 value = self.observed[block]
                 self.committed[block] = value
                 self.latest[block] = value
-                self.uncertain.pop(block, None)
                 if value is None:
                     self.committed_ord[block] = -1
 
@@ -799,8 +782,8 @@ class Runner:
                 else:
                     block = int(req["block"])
                     self._note_rid(int(req["rid"]))
-                    ok = {self.latest[block]} | self.uncertain.get(block, set())
-                    lines.append(self._deliver_read(int(req["rid"]), block, ok, "work"))
+                    lines.append(self._deliver_read(int(req["rid"]), block,
+                                                    {self.latest[block]}, "work"))
         if (self.armed is None and self.next_cut < len(self.cuts)
                 and self.next_req >= int(self.cuts[self.next_cut]["after_request"])):
             self.armed = dict(self.cuts[self.next_cut])
@@ -815,9 +798,7 @@ class Runner:
             self._take_baseline()
             self._purge_foreign_state()
             self._boot()
-            first = self.sc.get("first_verify")
-            self._verify([{None} for _ in self.blocks], resync=False,
-                         blocks=None if first is None else [int(b) for b in first])
+            self._verify([{None} for _ in self.blocks], resync=False)
             while True:
                 if self.next_req >= len(self.requests):
                     if not self.pending:
@@ -835,7 +816,6 @@ class Runner:
             for block in range(len(self.blocks)):
                 if self.latest[block] is not None:
                     allowed[block].add(self.latest[block])
-                allowed[block] |= self.uncertain.get(block, set())
             try:
                 self._verify(allowed, resync=False)
             except _Cut as c:
