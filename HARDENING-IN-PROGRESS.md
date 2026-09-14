@@ -7,11 +7,20 @@ tree is **not** in a submittable state.
 
 ## What to submit today
 
-`ecu-nvm-store.zip` at the repository root is untouched by this work. It is the
-bundle validated at commit `5ca972b`: oracle 1 on three consecutive runs, every
-probe 0, nop 0, all numbers in README and task.toml re derived from
-`results.json`. If a rerun of the anti cheat stage or a resubmission is needed
-now, use that zip.
+**Not the zip at the repository root.** It has now been rebuilt from this tree, so
+it carries the half finished work: the oracle scores **0** on it, with 67 integrity
+violations over the ten graded scenarios (18 rollbacks, 13 stale reads, 36 reads
+that never got a value). The other four bars are met on that run, mount 2.73 of
+8.0, no tick overrun, worst acknowledge 7 of 35, 4.936 erases per 100 writes of
+6.0, but two of the six tests fail and the reward is 0.
+
+The last bundle that passed is the one validated at commit `5ca972b`: oracle 1 on
+three consecutive runs, every probe 0, nop 0, every number in README and task.toml
+re derived from `results.json`. Recover it with
+
+    git show 5ca972b:ecu-nvm-store.zip > ecu-nvm-store-5ca972b.zip
+
+and submit or rerun against that until the work below lands.
 
 ## What is in the tree and what is wrong with it
 
