@@ -3,59 +3,65 @@
 The agent writes `/app/nvm_store.py`, the non volatile block store of an engine control unit. The
 verifier owns the flash part, the clock and the power: it serves one device operation at a time over
 a line protocol, kills the process at points the scenario fixes in advance, starts it again over the
-same image, and reads every block back to see what survived. Grading runs ten sealed scenarios on
-four parts whose geometry the agent never sees.
+same image, and reads blocks back to see what survived. Grading runs ten sealed scenarios on four
+parts whose geometry the agent never sees.
 
 ## Difficulty
 
-Five pieces of judgement have to be right at once, and four of them pull against each other, so no
-single habit carries the task.
+Between 490 and 700 blocks are live at once and they fill about seven pages in ten of the part, so
+nothing here fits anywhere convenient. The store has to run the whole part as a log and reclaim
+sectors out of it while the supply is being taken away, and five pieces of judgement have to be
+right at once, four of them pulling against each other.
 
 The first is what a record has to carry to be believed after a reset. A program interrupted part way
 leaves a prefix of the page written and the rest erased, so a page can hold something that looks
-like a record and is not one. Taking a page as a record on its tag alone costs a corrupt read and
-then an outright crash on a second scenario, because the length it reads out of a half written page
-is not a length.
+like a record and is not one. Taking a page as a record on its tag alone gives 3 corrupt reads and
+then an outright crash on a second scenario, because the length read out of a half written page is
+not a length.
 
-The second is the order in which a compaction becomes visible. All live data has to move to a fresh
-sector and the old one has to stay authoritative until the new one is complete, which means a
-generation number plus a marker written after the copy rather than before it, and a mount that
-prefers the newest sector that carries that marker rather than the newest sector. Nine of the forty
-nine resets in the graded set are aimed at an erase and thirty at a program, many of them inside
-that copy. Choosing by generation number alone produces 429 reads of stale data against a bar of
-zero.
+The second is what orders two copies of a block. A block is rewritten by appending its new version
+somewhere else, so the part carries several versions of most blocks and a mount has to know which
+one is current without reading everything. That means a generation number on each sector, applied in
+order, and a per sector record of what each of its pages holds so the closed sectors do not have to
+be read page by page. Applying the sectors in sector order rather than generation order costs 1000
+violations against a bar of zero, 870 of them a block coming back as a version it had thousands of
+writes ago.
 
 The third is that an erase is a request, not a fact. On some parts a sector starts keeping a few of
 its pages from its second erase onwards while still reporting the erase as finished, so a sector has
-to be read back before it is trusted and retired when it fails. The scenarios are long enough that
-the rotation comes round to the worn sector two or three times. Trusting the erase costs 31
-violations, and the damage is not where it is first expected: the copy lands on stale pages, the new
-header is written over an old one and therefore reads as rubbish, and the next reset then recovers
-the previous generation.
+to be read back before it is trusted. Trusting it costs 99 violations and stalls 965 writes. The
+opposite mistake costs as much: a reset in the middle of an erase leaves a sector half wiped and
+reading exactly like a worn one, so a store that gives a sector up the first time it reads back
+written throws away sectors it needs, and 461 writes are never acknowledged.
 
 The fourth is that an acknowledgement is a promise about the part and not about memory. Holding
 everything in memory and acknowledging on arrival passes every measure until the supply goes, at
-which point it loses 863 blocks; acknowledging when the write is queued rather than when its page is
-programmed costs 49.
+which point it loses 9207 blocks; acknowledging when the write is queued rather than when its page
+is programmed costs 6 violations.
 
-The fifth is the budget, which is where the two sided pressure lives. The store may spend 2.0 ms of
-device time per tick, which is about five page programs, and an erase takes the device away for
-three or four ticks during which nothing else can be done. Doing all outstanding work in the tick it
-arrives in overruns 222 times. Doing too little is punished from the other end: every write has to
-be acknowledged within 35 ticks, and a store that programs one record every eight ticks is at 764
-with 423 writes never acknowledged at all. The mount is bounded the same way. All live records sit
-in one sector in the reference precisely so that the index can be rebuilt inside 8.0 ms of device
-time; rebuilding it from every page of every sector takes 28.475 ms. And endurance is measured
-rather than assumed: compacting while thirty pages are still free is harmless for every other
-measure and takes the part to 9.558 erases per 100 writes against a bar of 6.0.
+The fifth is the budgets, which is where both directions are punished. The store may spend 2.0 ms of
+device time per tick, about five page programs, and an erase takes the device away for three or four
+ticks. Doing all outstanding work in the tick it arrives in overruns 1763 times. Doing too little is
+punished from the other end: every write has to be acknowledged within 35 ticks, and a store that
+programs one record every eight ticks is at 2942 with 2858 writes never acknowledged. The mount is
+bounded at 8.0 ms of device time, which is what the per sector summaries are for; rebuilding the
+index from every page of every sector takes 27.875 ms. And endurance is measured rather than
+assumed, at 5.0 erases per 100 acknowledged writes: with the part seven tenths full, a reclaim
+started while twenty pages of the open sector are still free reaches 8.082, and holding six sectors
+blank instead of two reaches 6.267 while failing nothing else.
+
+Getting a store that merely works is not the end of it either. A log across a full part deadlocks in
+ways a log across an empty one does not: a sector cannot be given up until its live records are
+copied somewhere, the somewhere has to be blank, and a blank sector is made by giving one up. The
+reference keeps two sectors blank rather than one and holds pages back at the end of the open sector
+for the copies that are due, and the variant with one blank sector passes every other bar and
+strands 461 writes.
 
 The data is synthetic and this is disclosed. A seeded generator
 (`authoring/provenance/generate_scenarios.py`) writes the workload and the reset points before any
 store runs, and the values grading compares against are the ones the workload asked for, so the
 truth never comes from a solver. Reset points are fixed at a request ordinal and then at a kind of
-operation, which is why two unrelated designs take their resets at the same points in the workload:
-the reference and the independent store each see 30 resets inside a program, 9 inside an erase, 9
-inside a read and 1 between operations.
+operation, which is why two unrelated designs take their resets at the same points in the workload.
 
 The difficulty is the design rather than hidden data, and the bundle is honest about that: the
 device model, the driver and the metric code are all given to the agent, along with three
@@ -64,26 +70,32 @@ development run cannot show by itself, which is four different geometries, betwe
 resets, runs long enough to wear a sector out, and reset points aimed at the erase and at the first
 programs after one.
 
-CPU only, `gpus = 0`. The work is a sequential tick loop of a few device operations over 24 blocks
-of at most 32 bytes; there is nothing to batch and a device would sit idle.
+CPU only, `gpus = 0`. The work is a sequential tick loop of a few device operations over blocks of
+at most 32 bytes; there is nothing to batch and a device would sit idle.
 
 ## Reference solution
 
-`solution/nvm_store.py`. Page 0 of each sector holds a header with a generation number, page 1 holds
-a seal that is programmed only once the sector holds a complete copy of every live block, and
-records are appended one to a page from page 2 upwards. A record carries its block, its length, a
+`solution/nvm_store.py`. Page 0 of a sector holds a header with the generation it was opened at.
+Records are appended one to a page from page 1 upwards, each carrying its block, its length, a
 record sequence number and a checksum over all of it, so a half programmed page fails its checksum
-and is skipped, and the append point is the first page that is wholly erased, which means such a
-page is never written over. Mount reads the sector headers, one seal and the pages of the active
-sector; because compaction copies everything forward, all live records are in that one sector.
+and is skipped, and the append point is the first page that is wholly erased, so such a page is
+never written over. The last few pages of a sector are kept for a summary, written when the sector
+is closed, listing the block held in every page of it. Mount reads the sector headers, the summary
+of each closed sector in generation order, and the pages of the one sector still open, so a summary
+a reset spoiled costs a scan of that sector alone.
 
-When the active sector fills, compaction erases the next sector in rotation, reads back every page
-of it to prove the erase took, retires it if it did not, writes the new header, copies the newest
-record of each live block, and writes the seal last. A reset anywhere in that sequence leaves the old
-sector sealed and authoritative and the new one unsealed and ignored, so the cost is the work being
-done again. Each write is read back after its page is programmed and acknowledged only then. Work is
-metered against the tick budget, with reads answered first so a read is never held up by compaction,
-and the erase verify is split across ticks since on the deepest part it is 2.56 ms of reads.
+Reclaim is the whole game with the part this full. The store keeps a live count per sector and takes
+the one holding the fewest live records, so a sector whose blocks have mostly been rewritten costs
+almost no copying. Copies are ordinary appends, so a reset in the middle of one leaves both the old
+record and the partial copy and the newer generation wins; the victim is erased only once its last
+live record is out of it, and the erase is read back page by page before the sector is used again
+and retried once before the sector is given up. Two sectors are kept blank, because a sector is only
+given up after a second erase of it reads back written, and by then its live records are already in
+the open sector and there is no room there to reclaim another one; the spare blank sector is what
+the part rolls onto in that case. Writes stop short of the end of the open sector by what the next
+reclaim will need, but only while nothing is blank. Work is metered against the tick budget with
+reads answered first, so a read is never held up behind a reclaim, and the erase verify is split
+across ticks.
 
 The `VARIANT` string at the top of the file is the authoring switch used to measure the ablations.
 It is empty as shipped and every value it accepts only removes a piece of the design.
@@ -122,12 +134,16 @@ power is gone can answer for durability, which is true by construction rather th
 The read back also no longer numbers its requests in a range of its own, so it cannot be recognised
 from the request number, though that is hygiene: recognising it buys nothing now.
 
-Three probes are kept under `authoring/evidence/cheats`, the last two rebuilt from the run audits
-including the geometry fingerprint and the environment stripping they used. They fail at 1344, 1344
-and 1200 violations, and a store that never leaves memory fails at 863. With the sweep switched off
-completely, so that every journal and every daemon survives untouched, all three still fail at 1344,
-with 1104 of those being values that were not on the part when the supply went, and the memory store
-at 863, while the reference and the independent store stay at 0.
+Seven hostile programs are kept under `authoring/evidence/cheats`, two of them rebuilt from the run
+audits including the geometry fingerprint and the environment stripping they used. Three of them, an
+absent program, one that prints lines that are not the protocol and one that mounts and then stops
+answering, are stopped before a bar is reached at all. The three that keep the blocks somewhere other
+than the part fail at 11338 violations each over the graded set, of which 10378 are values that were
+not on the part when the supply went, and a store that never leaves memory fails at 9207. With every isolation measure switched off,
+so that one working directory is reused across every boot, the sweep is a no operation and only the
+program itself is killed, all four still fail at the same counts while the reference and the
+independent store stay at 0; `authoring/evidence/isolation_off.json` carries those numbers, and they
+are what shows the bars rest on the durability check rather than on the sweep.
 `authoring/evidence/check_durability_semantics.py` asserts the property itself: a value written
 before a cut is in the frozen image, a value written after it is not, and the live image does contain
 the later write, which is what the old check compared against.
@@ -138,31 +154,40 @@ records permission denied on every path and then fails on its own merits.
 
 Five bars, measured over the ten scenarios together, all from `tests/scoring.py`: zero integrity
 violations, no mount above 8.0 ms of device time, no tick over its 2.0 ms budget, every write
-acknowledged within 35 ticks with none outstanding at the end, and at most 6.0 erases per 100
-acknowledged writes. The reference scores 0, 2.880 ms, 0, 11 ticks and 2.491. A second correct store
-written to a different design, a circular log over the whole part with index snapshots and
-reclamation of the oldest sector rather than compaction forward, scores 0, 2.900 ms, 0, 12 ticks and
-1.894. Five perturbations of the reference's own constants all pass, the worst at 17 ticks and 3.207
-erases per 100 writes, so the pass does not depend on one exact tuning.
+acknowledged within 35 ticks with none outstanding at the end, and at most 5.0 erases per 100
+acknowledged writes. The reference scores 0, 2.380 ms, 0, 4 ticks and 2.384. A second correct store
+written to a different design, a single map sector rotated through the blank pool carrying a whole
+index checkpoint written each time a log sector is opened, with no summary kept inside a log sector
+and a mount that reads the newest checkpoint and the one sector of log it does not describe, scores
+0, 4.020 ms, 0, 7 ticks and 3.110. Nine perturbations of the reference's own constants and of
+choices a second author could reasonably have made differently all pass, the worst at 35 ticks and
+3.872 erases per 100 writes, so the pass does not depend on one exact tuning, and each bar sits
+between the weaker of the two correct stores and the nearest variant that fails.
 
-Each bar is the sole reason some variant fails. Dropping the record checksum, the seal, the erase
-verify or the late acknowledgement fails integrity alone, at 1 (plus a crash), 429, 31 and 49
-violations. The same test was run on the independently written store rather than only on the
-reference, because a reviewer of an earlier task of mine switched a piece off inside a shipped
-solver and watched it pass: four of its five pieces bite, at 3 violations plus a crash, 2, 118 and 6,
-and the fifth, an index snapshot refreshed before a sector is reclaimed, measurably does not, which
-`authoring/evidence/validation.md` reports and explains rather than claiming as a crux. The one way
-the mount bar might have been dodged, spending nothing at MOUNT and scanning the part from inside
-the ticks while answering reads BUSY, was built and measured too: it records 0.000 ms of mount time
-and still fails, at 1161 violations from reads that never got a value and 2 tick overruns, because a
-whole part does not fit in eight ticks of a 2.0 ms budget either. Doing every job immediately fails the tick budget alone at 222 overruns. Scanning every
-sector at mount fails the mount bar alone at 28.475 ms. Compacting thirty pages early fails
-endurance alone at 9.558. Programming one record every two or every eight ticks fails the
-acknowledgement bar alone, at 54 and 764 ticks. The quick attempt of the kind written in a few
-minutes, a memory mirror that acknowledges on arrival and dumps itself into the next sector when one
-fills, loses 1096 blocks. The shipped skeleton, which answers every read NONE, fails integrity and
-acknowledgement. A store that keeps everything in memory and never touches the part fails integrity
-at 863, which is what shows the resets carry that bar rather than the workload.
+Each of the five bars is the sole reason some variant fails. Dropping the record checksum, applying
+the sectors at mount in sector order, or acknowledging on arrival fails integrity alone, at 3
+violations plus a crash, 1000 and 6. Dropping the per sector summaries fails the mount bar alone at
+27.875 ms. Doing every job in the tick it arrives in fails the tick budget alone at 1763 overruns.
+Keeping one blank sector rather than two, or giving a sector up after a single erase, fails the
+acknowledgement bar alone at 461 writes stranded. Holding six sectors blank fails the endurance bar
+alone at 6.267. The same ablation test was run on the independently written store rather than only
+on the reference, because a reviewer of an earlier task of mine switched a piece off inside a
+shipped solver and watched it pass: all five of its pieces bite, at 3 violations plus a crash for
+the record checksum, 26.625 ms of mount for the checkpoint, 70 violations with 504 writes stranded
+for the erase proof, 4 violations for acknowledging on arrival, and 1 violation with 1106 writes
+stranded for keeping one blank sector rather than two.
+
+Three switches are reported as guards rather than claimed as ablations. Holding pages back at the
+end of the open sector for a reclaim that is due, leaving a gap between erases so a read is not
+stuck behind two of them, and reading a reclaim copy back before erasing the sector it came from all
+argue for themselves, and removing any of them leaves every number on the graded set unchanged.
+`authoring/evidence/validation.md` says so rather than claiming a crux that does not measure.
+
+The quick attempt of the kind written in a few minutes, a memory mirror that acknowledges on arrival
+and dumps itself into the next sector when one fills, loses 9180 blocks and fails endurance as well.
+The shipped skeleton, which answers every read NONE, fails integrity and acknowledgement. A store
+that keeps everything in memory and never touches the part fails integrity at 9207, which is what
+shows the resets carry that bar rather than the workload.
 
 `numpy==2.0.2` is installed in both images although nothing here imports it, so that a submitted
 store which reaches for it still runs; the instruction says what is available.

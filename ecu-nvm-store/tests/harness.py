@@ -783,9 +783,9 @@ class Runner:
             todo = todo[VERIFY_READS_PER_TICK:]
             self._exchange(lines)
         if resync:
-            # what the part gave back is the new truth for the blocks that were
-            # read, and only for those: the rest stay uncertain until a write
-            # settles them again
+            # what the part gave back is what the run goes on from, for the
+            # blocks that were read and only for those: the rest stay uncertain
+            # until a write settles them again
             for block in checked:
                 value = self.observed[block]
                 self.committed[block] = value

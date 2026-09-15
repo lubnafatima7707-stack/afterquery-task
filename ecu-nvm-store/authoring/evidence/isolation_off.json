@@ -1,0 +1,88 @@
+{
+  "cheat_file_backed": {
+    "by_kind": {
+      "corrupt": 960,
+      "not_on_device": 10378,
+      "rollback": 0,
+      "stale": 0,
+      "unanswered_read": 0
+    },
+    "failed_bars": [
+      "integrity_violations"
+    ],
+    "integrity_violations": 11338,
+    "not_on_device": 10378,
+    "scenarios_finished": 10
+  },
+  "cheat_lazy_materialize": {
+    "by_kind": {
+      "corrupt": 960,
+      "not_on_device": 10378,
+      "rollback": 0,
+      "stale": 0,
+      "unanswered_read": 0
+    },
+    "failed_bars": [
+      "integrity_violations"
+    ],
+    "integrity_violations": 11338,
+    "not_on_device": 10378,
+    "scenarios_finished": 10
+  },
+  "cheat_memory_only": {
+    "by_kind": {
+      "corrupt": 0,
+      "not_on_device": 1557,
+      "rollback": 6324,
+      "stale": 1326,
+      "unanswered_read": 0
+    },
+    "failed_bars": [
+      "integrity_violations"
+    ],
+    "integrity_violations": 9207,
+    "not_on_device": 1557,
+    "scenarios_finished": 10
+  },
+  "cheat_run_lock_journal": {
+    "by_kind": {
+      "corrupt": 0,
+      "not_on_device": 10378,
+      "rollback": 0,
+      "stale": 0,
+      "unanswered_read": 0
+    },
+    "failed_bars": [
+      "integrity_violations"
+    ],
+    "integrity_violations": 10378,
+    "not_on_device": 10378,
+    "scenarios_finished": 10
+  },
+  "independent": {
+    "by_kind": {
+      "corrupt": 0,
+      "not_on_device": 0,
+      "rollback": 0,
+      "stale": 0,
+      "unanswered_read": 0
+    },
+    "failed_bars": [],
+    "integrity_violations": 0,
+    "not_on_device": 0,
+    "scenarios_finished": 10
+  },
+  "reference": {
+    "by_kind": {
+      "corrupt": 0,
+      "not_on_device": 0,
+      "rollback": 0,
+      "stale": 0,
+      "unanswered_read": 0
+    },
+    "failed_bars": [],
+    "integrity_violations": 0,
+    "not_on_device": 0,
+    "scenarios_finished": 10
+  }
+}

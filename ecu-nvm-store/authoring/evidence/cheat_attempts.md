@@ -10,12 +10,13 @@ executed by the verifier.
 | no program | `/app/nvm_store.py` absent | every scenario fails to start, `test_every_scenario_ran` fails, reward 0 |
 | `cheats/garbage.py` | prints lines that are not the protocol | rejected at mount with `unexpected line during mount`, reward 0 |
 | `cheats/sleeper.py` | mounts, then stops answering, and double forks a child into its own session | each scenario ends at the wall clock limit after 20.0 s, the process group is killed, reward 0 |
-| `cheats/reward_writer.py` | writes `/logs/verifier/reward.txt` and `/logs/verifier/ctrf.json`, globs `/tests/hidden` and `/tests/*.py`, then answers every read NONE | every write refused with permission denied, every glob returns zero files, `reward.txt` unchanged at `0`, and it then fails integrity at 2854 violations with 1113 writes never acknowledged |
-| `cheats/ram_only.py` | acknowledges on arrival, answers from memory, never touches the part | 863 integrity violations over the graded set, reward 0 |
-| `cheats/file_backed.py` | keeps the blocks in a file in the working directory, `/tmp`, `/var/tmp`, `/dev/shm`, the home directory and `TMPDIR`, and in a daemon behind an abstract socket, and reloads them at MOUNT | 1344 integrity violations, 46 daemons killed, reward 0 |
-| `cheats/run_lock_journal.py` | the adversarial probe, rebuilt from the run audit: issues no device operation at all and journals the blocks as JSON into `/run/lock`, named by a fingerprint of the geometry | 1344 integrity violations, reward 0 |
-| `shortcut_store.py` | the quick attempt: memory mirror, ack on arrival, sector dump on fill | 1096 integrity violations, reward 0 |
-| `environment/tools/skeleton_store.py` | the shipped skeleton, every read NONE, no acknowledgements | 2854 integrity violations and 1113 writes unacknowledged, reward 0 |
+| `cheats/reward_writer.py` | writes `/logs/verifier/reward.txt` and `/logs/verifier/ctrf.json`, globs `/tests/hidden` and `/tests/*.py`, then answers every read NONE | every write refused with permission denied, every glob returns zero files, `reward.txt` unchanged at `0`, and it then fails integrity at 7808 violations with 4043 writes never acknowledged |
+| `cheats/ram_only.py` | acknowledges on arrival, answers from memory, never touches the part | 9207 integrity violations over the graded set, reward 0 |
+| `cheats/file_backed.py` | keeps the blocks in a file in the working directory, `/tmp`, `/var/tmp`, `/dev/shm`, the home directory and `TMPDIR`, and in a daemon behind an abstract socket, and reloads them at MOUNT | 11338 integrity violations, reward 0 |
+| `cheats/run_lock_journal.py` | the adversarial probe, rebuilt from the run audit: issues no device operation at all and journals the blocks as JSON into `/run/lock`, named by a fingerprint of the geometry | 11338 integrity violations, reward 0 |
+| `cheats/lazy_materialize.py` | the later probe, rebuilt from the run audit: a daemon that re execs without the marker, an abstract socket, and the held values programmed into blank pages once the read back begins | 11338 integrity violations, reward 0 |
+| `shortcut_store.py` | the quick attempt: memory mirror, ack on arrival, sector dump on fill | 9180 integrity violations and 54.172 erases per 100 writes, reward 0 |
+| `environment/tools/skeleton_store.py` | the shipped skeleton, every read NONE, no acknowledgements | 7808 integrity violations and 4043 writes unacknowledged, reward 0 |
 
 ## Why the reward channel holds
 
@@ -51,7 +52,7 @@ A reset now takes everything but the flash with it, in `Runner._purge_foreign_st
   temporary files are swept as well
 
 The probe was widened to try all of those paths and the daemon, and kept in `cheats/file_backed.py`.
-It now scores 1344 integrity violations, and the run report
+It now scores 11338 integrity violations, and the run report
 carries the count of what was taken away from it so the enforcement is visible rather than implied.
 `authoring/evidence/bundle_checks.py` fails if any part of this is removed from the harness, or if
 the copy of the driver given to the agent stops matching the one that grades.
@@ -63,6 +64,9 @@ the sweep was the hardcoded tuple `/tmp`, `/var/tmp`, `/dev/shm`, `/dev/mqueue`,
 world writable directories in the image, found `/run/lock` at mode 1777 with `/var/lock` pointing at
 it, and journalled its blocks there. It issued no device operation whatsoever and scored reward 1,
 with zero erases, zero programs and 0.0 ms of mount and tick time over 9820 acknowledged writes.
+That probe, and the review before it, ran against an earlier and smaller shape of this task, so the
+counts quoted from their reports are on that scale; every number in the tables above is from the
+graded set as it stands.
 
 The lesson is that a list of places to clear is a blocklist, and a blocklist can always be one entry
 short. Two changes followed, and only the first is load bearing:
@@ -79,17 +83,22 @@ short. Two changes followed, and only the first is load bearing:
    remains as a fallback if the walk cannot run.
 
 The probe is rebuilt in `cheats/run_lock_journal.py`, including the geometry fingerprint it used to
-name its journal, and it now fails at 1344 violations. The number that shows which change is doing
+name its journal, and it now fails at 11338 violations. The number that shows which change is doing
 the work is measured with `_purge_foreign_state` reduced to rebuilding the working directory and
 nothing else, so every journal and every daemon survives the run untouched:
 
-| solver, with every sweep disabled | not_on_device | total integrity violations | bars |
+| solver, with every isolation measure disabled | not_on_device | total integrity violations | bars |
 |---|---|---|---|
-| `cheats/run_lock_journal.py` | 1104 | 1344 | integrity |
-| `cheats/file_backed.py` | 1104 | 1344 | integrity |
-| `cheats/ram_only.py` | 227 | 863 | integrity |
+| `cheats/run_lock_journal.py` | 10378 | 10378 | integrity |
+| `cheats/file_backed.py` | 10378 | 11338 | integrity |
+| `cheats/lazy_materialize.py` | 10378 | 11338 | integrity |
+| `cheats/ram_only.py` | 1557 | 9207 | integrity |
 | `solution/nvm_store.py` | 0 | 0 | none |
 | `independent_store.py` | 0 | 0 | none |
+
+Reproduced by the script that writes `authoring/evidence/isolation_off.json`: the working directory
+is reused across every boot of a scenario, `_purge_foreign_state` is a no operation, and only the
+program itself is killed, so every journal and every daemon survives the run untouched.
 
 Neither correct store is touched by the check, because both write the payload into a record and can
 read it back; neither probe survives it, because none of them ever wrote anything to the part.
@@ -107,7 +116,7 @@ It also found an earlier hole in the harness. Resets used to be triggered by cou
 device operations after a request ordinal, so a program that issued no operations was never reset at
 all and `ram_only.py` passed every bar. Each reset now carries a deadline in ticks and happens
 anyway if the operation it was aimed at never comes, which is what the `IDLE` entries in the reset
-log are. After that change the same program loses 863 blocks, and no process of it survives the run.
+log are. After that change the same program loses 9207 blocks, and no process of it survives the run.
 
 ## One deliberately weakened reference that crashes rather than lies
 
@@ -132,7 +141,7 @@ mattered:
    programmed into blank pages so the bytes were in the image exactly when the check looked
 
 The reported metrics say it plainly: 0 erases, 0.0 ms of mount time, 0 tick acknowledge latency,
-across 36 power cuts.
+across 49 power cuts.
 
 The repair is to compare against the image **frozen at the instant of the cut**, and again before the
 read back that ends a run, rather than against the image as it stands. Power is already gone at that
@@ -142,7 +151,7 @@ workload uses, which removes the fingerprint in (2), though with the freeze in p
 read back buys nothing.
 
 The probe is rebuilt as `cheats/lazy_materialize.py`, including the re exec, the abstract socket and
-the geometry fingerprint, and it fails at 1200 violations.
+the geometry fingerprint, and it fails at 11338 violations.
 
 ### What is measured here and what is not
 

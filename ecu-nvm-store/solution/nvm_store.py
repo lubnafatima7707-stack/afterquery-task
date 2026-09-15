@@ -16,13 +16,23 @@ the summary of each closed sector in generation order, and the pages of the one
 sector still open; a summary that a reset spoiled costs a scan of that sector
 alone.
 
-Reclaim. With the part about seven tenths full, which sector to erase is the
-whole game: the store keeps a live count per sector and takes the one holding
-the fewest live records, so a sector of cold blocks that have all been rewritten
-costs almost no copying while a round robin choice pays for the live ones every
-time. Copies are ordinary appends, so a reset in the middle of one leaves both
-the old record and the partial copy and the newer generation wins. The victim is
-erased only once its live records are appended elsewhere.
+Reclaim. With the part about seven tenths full, what a reclaim costs is the
+copying and what it buys is the pages it frees, so the store keeps a live count
+per sector and takes the one holding the fewest live records. Copies are
+ordinary appends, so a reset in the middle of one leaves both the old record and
+the partial copy and the newer generation wins. The victim is erased only once
+its last live record is out of it, and the erase is read back page by page
+before the sector is used again: an erase is a request and not a fact. It is
+also tried a second time before the sector is given up, because a reset inside
+an erase leaves a sector half wiped and reading exactly like a worn one.
+
+Two sectors are kept blank rather than one. A sector is only given up after a
+second erase of it reads back written, and by then its live records are already
+in the open sector and there is no room left there to reclaim another one; the
+spare blank sector is what the part rolls onto in that case. Writes stop short
+of the end of the open sector by what the next reclaim will need, but only while
+nothing is blank: holding pages back for a second blank sector that a full part
+has no room to make would stop the writes for good.
 
 The VARIANT string is the authoring switch. It is empty in the shipped solution
 and every value it accepts only removes a piece of the design.

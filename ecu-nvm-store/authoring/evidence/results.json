@@ -1,6 +1,6 @@
 {
   "bars": {
-    "erases_per_100_writes": 6.0,
+    "erases_per_100_writes": 5.0,
     "integrity_violations": 0,
     "max_ack_latency_ticks": 35,
     "max_mount_ms": 8.0,
@@ -12,7 +12,7 @@
     {
       "kind": "reference",
       "metrics": {
-        "acked_writes": 9756,
+        "acked_writes": 37162,
         "boots": 59,
         "by_kind": {
           "corrupt": 0,
@@ -21,21 +21,21 @@
           "stale": 0,
           "unanswered_read": 0
         },
-        "erases": 243,
-        "erases_per_100_writes": 2.491,
+        "erases": 886,
+        "erases_per_100_writes": 2.384,
         "failed_bars": [],
         "failed_scenarios": {},
         "foreign_files_removed": 0,
         "integrity_violations": 0,
-        "lost_writes": 64,
-        "max_ack_latency_ticks": 11,
-        "max_mount_ms": 2.88,
+        "lost_writes": 38,
+        "max_ack_latency_ticks": 4,
+        "max_mount_ms": 2.38,
         "max_read_latency_ticks": 3,
-        "max_sector_erases": 4,
+        "max_sector_erases": 14,
         "n_scenarios": 10,
         "stray_processes_killed": 0,
         "tick_overruns": 0,
-        "ticks": 34848,
+        "ticks": 124588,
         "unacked_at_end": 0,
         "worst_tick_ms": 2.0
       },
@@ -45,17 +45,17 @@
     {
       "kind": "ablation",
       "metrics": {
-        "acked_writes": 9001,
+        "acked_writes": 33766,
         "boots": 53,
         "by_kind": {
-          "corrupt": 1,
+          "corrupt": 3,
           "not_on_device": 0,
           "rollback": 0,
           "stale": 0,
           "unanswered_read": 0
         },
-        "erases": 221,
-        "erases_per_100_writes": 2.455,
+        "erases": 802,
+        "erases_per_100_writes": 2.375,
         "failed_bars": [
           "completion",
           "integrity_violations"
@@ -64,16 +64,16 @@
           "h02_a_bursts": "the program exited without finishing the tick"
         },
         "foreign_files_removed": 0,
-        "integrity_violations": 1,
-        "lost_writes": 59,
-        "max_ack_latency_ticks": 11,
-        "max_mount_ms": 2.88,
+        "integrity_violations": 3,
+        "lost_writes": 34,
+        "max_ack_latency_ticks": 4,
+        "max_mount_ms": 2.375,
         "max_read_latency_ticks": 3,
-        "max_sector_erases": 4,
+        "max_sector_erases": 14,
         "n_scenarios": 9,
         "stray_processes_killed": 0,
         "tick_overruns": 0,
-        "ticks": 32719,
+        "ticks": 114750,
         "unacked_at_end": 0,
         "worst_tick_ms": 2.0
       },
@@ -83,68 +83,69 @@
     {
       "kind": "ablation",
       "metrics": {
-        "acked_writes": 9767,
+        "acked_writes": 37161,
         "boots": 59,
         "by_kind": {
           "corrupt": 0,
           "not_on_device": 0,
-          "rollback": 429,
+          "rollback": 0,
           "stale": 0,
           "unanswered_read": 0
         },
-        "erases": 208,
-        "erases_per_100_writes": 2.13,
+        "erases": 884,
+        "erases_per_100_writes": 2.379,
         "failed_bars": [
-          "integrity_violations"
+          "max_mount_ms"
         ],
         "failed_scenarios": {},
         "foreign_files_removed": 0,
-        "integrity_violations": 429,
-        "lost_writes": 53,
-        "max_ack_latency_ticks": 11,
-        "max_mount_ms": 2.84,
+        "integrity_violations": 0,
+        "lost_writes": 39,
+        "max_ack_latency_ticks": 4,
+        "max_mount_ms": 27.875,
         "max_read_latency_ticks": 3,
-        "max_sector_erases": 4,
+        "max_sector_erases": 14,
         "n_scenarios": 10,
         "stray_processes_killed": 0,
         "tick_overruns": 0,
-        "ticks": 34869,
+        "ticks": 124588,
         "unacked_at_end": 0,
         "worst_tick_ms": 2.0
       },
-      "name": "no_seal",
-      "note": "the sector with the highest generation wins even when its copy never finished"
+      "name": "no_sector_summary",
+      "note": "the mount rebuilds its index by reading every page of every sector"
     },
     {
       "kind": "ablation",
       "metrics": {
-        "acked_writes": 9762,
+        "acked_writes": 29092,
         "boots": 59,
         "by_kind": {
           "corrupt": 0,
           "not_on_device": 0,
-          "rollback": 28,
-          "stale": 2,
-          "unanswered_read": 1
+          "rollback": 82,
+          "stale": 17,
+          "unanswered_read": 0
         },
-        "erases": 239,
-        "erases_per_100_writes": 2.448,
+        "erases": 562,
+        "erases_per_100_writes": 1.932,
         "failed_bars": [
-          "integrity_violations"
+          "integrity_violations",
+          "ack_latency"
         ],
         "failed_scenarios": {},
         "foreign_files_removed": 0,
-        "integrity_violations": 31,
-        "lost_writes": 58,
-        "max_ack_latency_ticks": 9,
-        "max_mount_ms": 2.88,
+        "integrity_violations": 99,
+        "lost_writes": 7143,
+        "max_ack_latency_ticks": 12,
+        "max_mount_ms": 2.68,
         "max_read_latency_ticks": 3,
-        "max_sector_erases": 5,
+        "max_sector_erases": 11,
         "n_scenarios": 10,
         "stray_processes_killed": 0,
         "tick_overruns": 0,
-        "ticks": 34848,
-        "unacked_at_end": 0,
+        "ticks": 124996,
+        "unacked_at_end": 965,
         "worst_tick_ms": 1.975
       },
       "name": "no_erase_verify",
@@ -153,7 +154,42 @@
     {
       "kind": "ablation",
       "metrics": {
-        "acked_writes": 9771,
+        "acked_writes": 37163,
+        "boots": 59,
+        "by_kind": {
+          "corrupt": 0,
+          "not_on_device": 0,
+          "rollback": 870,
+          "stale": 130,
+          "unanswered_read": 0
+        },
+        "erases": 913,
+        "erases_per_100_writes": 2.457,
+        "failed_bars": [
+          "integrity_violations"
+        ],
+        "failed_scenarios": {},
+        "foreign_files_removed": 0,
+        "integrity_violations": 1000,
+        "lost_writes": 37,
+        "max_ack_latency_ticks": 4,
+        "max_mount_ms": 4.26,
+        "max_read_latency_ticks": 3,
+        "max_sector_erases": 14,
+        "n_scenarios": 10,
+        "stray_processes_killed": 0,
+        "tick_overruns": 0,
+        "ticks": 124592,
+        "unacked_at_end": 0,
+        "worst_tick_ms": 2.0
+      },
+      "name": "mount_in_sector_order",
+      "note": "the mount applies sectors in sector order, so an older record can land on top of a newer one"
+    },
+    {
+      "kind": "ablation",
+      "metrics": {
+        "acked_writes": 37161,
         "boots": 59,
         "by_kind": {
           "corrupt": 0,
@@ -162,25 +198,25 @@
           "stale": 0,
           "unanswered_read": 0
         },
-        "erases": 244,
-        "erases_per_100_writes": 2.497,
+        "erases": 895,
+        "erases_per_100_writes": 2.408,
         "failed_bars": [
           "tick_overruns"
         ],
         "failed_scenarios": {},
-        "foreign_files_removed": 0,
+        "foreign_files_removed": 6,
         "integrity_violations": 0,
-        "lost_writes": 49,
-        "max_ack_latency_ticks": 6,
-        "max_mount_ms": 2.88,
+        "lost_writes": 39,
+        "max_ack_latency_ticks": 4,
+        "max_mount_ms": 2.45,
         "max_read_latency_ticks": 3,
-        "max_sector_erases": 4,
+        "max_sector_erases": 14,
         "n_scenarios": 10,
         "stray_processes_killed": 0,
-        "tick_overruns": 222,
-        "ticks": 34848,
+        "tick_overruns": 1763,
+        "ticks": 124586,
         "unacked_at_end": 0,
-        "worst_tick_ms": 13.04
+        "worst_tick_ms": 19.36
       },
       "name": "no_tick_budget",
       "note": "all outstanding work is done in the tick it arrives in"
@@ -188,67 +224,32 @@
     {
       "kind": "ablation",
       "metrics": {
-        "acked_writes": 9756,
+        "acked_writes": 37200,
         "boots": 59,
         "by_kind": {
           "corrupt": 0,
           "not_on_device": 0,
-          "rollback": 0,
-          "stale": 0,
+          "rollback": 3,
+          "stale": 3,
           "unanswered_read": 0
         },
-        "erases": 243,
-        "erases_per_100_writes": 2.491,
-        "failed_bars": [
-          "max_mount_ms"
-        ],
-        "failed_scenarios": {},
-        "foreign_files_removed": 0,
-        "integrity_violations": 0,
-        "lost_writes": 64,
-        "max_ack_latency_ticks": 11,
-        "max_mount_ms": 28.475,
-        "max_read_latency_ticks": 3,
-        "max_sector_erases": 4,
-        "n_scenarios": 10,
-        "stray_processes_killed": 0,
-        "tick_overruns": 0,
-        "ticks": 34848,
-        "unacked_at_end": 0,
-        "worst_tick_ms": 2.0
-      },
-      "name": "mount_full_scan",
-      "note": "the mount rebuilds its index from every page of every sector"
-    },
-    {
-      "kind": "ablation",
-      "metrics": {
-        "acked_writes": 9820,
-        "boots": 59,
-        "by_kind": {
-          "corrupt": 0,
-          "not_on_device": 0,
-          "rollback": 49,
-          "stale": 0,
-          "unanswered_read": 0
-        },
-        "erases": 243,
-        "erases_per_100_writes": 2.475,
+        "erases": 886,
+        "erases_per_100_writes": 2.382,
         "failed_bars": [
           "integrity_violations"
         ],
         "failed_scenarios": {},
-        "foreign_files_removed": 0,
-        "integrity_violations": 49,
+        "foreign_files_removed": 4,
+        "integrity_violations": 6,
         "lost_writes": 0,
         "max_ack_latency_ticks": 0,
-        "max_mount_ms": 2.88,
+        "max_mount_ms": 2.38,
         "max_read_latency_ticks": 3,
-        "max_sector_erases": 4,
+        "max_sector_erases": 14,
         "n_scenarios": 10,
         "stray_processes_killed": 0,
         "tick_overruns": 0,
-        "ticks": 34848,
+        "ticks": 124588,
         "unacked_at_end": 0,
         "worst_tick_ms": 2.0
       },
@@ -258,7 +259,7 @@
     {
       "kind": "ablation",
       "metrics": {
-        "acked_writes": 9761,
+        "acked_writes": 34399,
         "boots": 59,
         "by_kind": {
           "corrupt": 0,
@@ -267,34 +268,34 @@
           "stale": 0,
           "unanswered_read": 0
         },
-        "erases": 933,
-        "erases_per_100_writes": 9.558,
+        "erases": 696,
+        "erases_per_100_writes": 2.023,
         "failed_bars": [
-          "erases_per_100_writes"
+          "ack_latency"
         ],
         "failed_scenarios": {},
-        "foreign_files_removed": 0,
+        "foreign_files_removed": 40,
         "integrity_violations": 0,
-        "lost_writes": 59,
-        "max_ack_latency_ticks": 13,
-        "max_mount_ms": 2.3,
+        "lost_writes": 2340,
+        "max_ack_latency_ticks": 4,
+        "max_mount_ms": 2.6,
         "max_read_latency_ticks": 3,
-        "max_sector_erases": 14,
+        "max_sector_erases": 13,
         "n_scenarios": 10,
         "stray_processes_killed": 0,
         "tick_overruns": 0,
-        "ticks": 34865,
-        "unacked_at_end": 0,
+        "ticks": 124791,
+        "unacked_at_end": 461,
         "worst_tick_ms": 2.0
       },
-      "name": "compact_too_early",
-      "note": "compaction starts while thirty pages of the active sector are still free"
+      "name": "one_blank_sector",
+      "note": "one sector is kept blank rather than two, so a reclaim that finds a worn sector has nowhere to go"
     },
     {
       "kind": "ablation",
       "metrics": {
-        "acked_writes": 4445,
-        "boots": 58,
+        "acked_writes": 35225,
+        "boots": 59,
         "by_kind": {
           "corrupt": 0,
           "not_on_device": 0,
@@ -302,24 +303,203 @@
           "stale": 0,
           "unanswered_read": 0
         },
-        "erases": 124,
-        "erases_per_100_writes": 2.79,
+        "erases": 806,
+        "erases_per_100_writes": 2.288,
         "failed_bars": [
           "ack_latency"
         ],
         "failed_scenarios": {},
-        "foreign_files_removed": 0,
+        "foreign_files_removed": 56,
         "integrity_violations": 0,
-        "lost_writes": 4959,
-        "max_ack_latency_ticks": 764,
-        "max_mount_ms": 2.88,
+        "lost_writes": 1514,
+        "max_ack_latency_ticks": 4,
+        "max_mount_ms": 2.375,
         "max_read_latency_ticks": 3,
-        "max_sector_erases": 3,
+        "max_sector_erases": 15,
         "n_scenarios": 10,
         "stray_processes_killed": 0,
         "tick_overruns": 0,
-        "ticks": 36680,
-        "unacked_at_end": 423,
+        "ticks": 124788,
+        "unacked_at_end": 461,
+        "worst_tick_ms": 2.0
+      },
+      "name": "one_erase_attempt",
+      "note": "a sector that reads back written after one erase is given up on, worn or merely half wiped"
+    },
+    {
+      "kind": "ablation",
+      "metrics": {
+        "acked_writes": 10252,
+        "boots": 59,
+        "by_kind": {
+          "corrupt": 0,
+          "not_on_device": 0,
+          "rollback": 1,
+          "stale": 0,
+          "unanswered_read": 0
+        },
+        "erases": 48,
+        "erases_per_100_writes": 0.468,
+        "failed_bars": [
+          "integrity_violations",
+          "ack_latency"
+        ],
+        "failed_scenarios": {},
+        "foreign_files_removed": 29,
+        "integrity_violations": 1,
+        "lost_writes": 22905,
+        "max_ack_latency_ticks": 17,
+        "max_mount_ms": 2.44,
+        "max_read_latency_ticks": 3,
+        "max_sector_erases": 4,
+        "n_scenarios": 10,
+        "stray_processes_killed": 0,
+        "tick_overruns": 0,
+        "ticks": 126626,
+        "unacked_at_end": 4043,
+        "worst_tick_ms": 2.0
+      },
+      "name": "fullest_sector_reclaimed",
+      "note": "the sector with the most live records is reclaimed rather than the one with the fewest"
+    },
+    {
+      "kind": "ablation",
+      "metrics": {
+        "acked_writes": 16761,
+        "boots": 59,
+        "by_kind": {
+          "corrupt": 0,
+          "not_on_device": 0,
+          "rollback": 0,
+          "stale": 0,
+          "unanswered_read": 0
+        },
+        "erases": 1541,
+        "erases_per_100_writes": 9.194,
+        "failed_bars": [
+          "ack_latency",
+          "erases_per_100_writes"
+        ],
+        "failed_scenarios": {},
+        "foreign_files_removed": 0,
+        "integrity_violations": 0,
+        "lost_writes": 18117,
+        "max_ack_latency_ticks": 4,
+        "max_mount_ms": 2.18,
+        "max_read_latency_ticks": 2,
+        "max_sector_erases": 47,
+        "n_scenarios": 10,
+        "stray_processes_killed": 0,
+        "tick_overruns": 0,
+        "ticks": 125813,
+        "unacked_at_end": 2322,
+        "worst_tick_ms": 2.0
+      },
+      "name": "compact_at_thirty",
+      "note": "the open sector is closed while thirty of its pages are still free"
+    },
+    {
+      "kind": "ablation",
+      "metrics": {
+        "acked_writes": 33533,
+        "boots": 59,
+        "by_kind": {
+          "corrupt": 0,
+          "not_on_device": 0,
+          "rollback": 0,
+          "stale": 0,
+          "unanswered_read": 0
+        },
+        "erases": 2710,
+        "erases_per_100_writes": 8.082,
+        "failed_bars": [
+          "ack_latency",
+          "erases_per_100_writes"
+        ],
+        "failed_scenarios": {},
+        "foreign_files_removed": 0,
+        "integrity_violations": 0,
+        "lost_writes": 3206,
+        "max_ack_latency_ticks": 4,
+        "max_mount_ms": 2.28,
+        "max_read_latency_ticks": 3,
+        "max_sector_erases": 47,
+        "n_scenarios": 10,
+        "stray_processes_killed": 0,
+        "tick_overruns": 0,
+        "ticks": 124793,
+        "unacked_at_end": 461,
+        "worst_tick_ms": 2.0
+      },
+      "name": "compact_at_twenty",
+      "note": "the open sector is closed while twenty of its pages are still free"
+    },
+    {
+      "kind": "ablation",
+      "metrics": {
+        "acked_writes": 37132,
+        "boots": 59,
+        "by_kind": {
+          "corrupt": 0,
+          "not_on_device": 0,
+          "rollback": 0,
+          "stale": 0,
+          "unanswered_read": 0
+        },
+        "erases": 2327,
+        "erases_per_100_writes": 6.267,
+        "failed_bars": [
+          "erases_per_100_writes"
+        ],
+        "failed_scenarios": {},
+        "foreign_files_removed": 0,
+        "integrity_violations": 0,
+        "lost_writes": 68,
+        "max_ack_latency_ticks": 35,
+        "max_mount_ms": 2.425,
+        "max_read_latency_ticks": 3,
+        "max_sector_erases": 52,
+        "n_scenarios": 10,
+        "stray_processes_killed": 0,
+        "tick_overruns": 0,
+        "ticks": 124586,
+        "unacked_at_end": 0,
+        "worst_tick_ms": 2.0
+      },
+      "name": "six_blank_sectors",
+      "note": "six sectors are held blank, which is six sectors of live set the rest of the part has to carry"
+    },
+    {
+      "kind": "ablation",
+      "metrics": {
+        "acked_writes": 15646,
+        "boots": 59,
+        "by_kind": {
+          "corrupt": 0,
+          "not_on_device": 38,
+          "rollback": 1,
+          "stale": 0,
+          "unanswered_read": 0
+        },
+        "erases": 158,
+        "erases_per_100_writes": 1.01,
+        "failed_bars": [
+          "integrity_violations",
+          "ack_latency"
+        ],
+        "failed_scenarios": {},
+        "foreign_files_removed": 0,
+        "integrity_violations": 39,
+        "lost_writes": 18873,
+        "max_ack_latency_ticks": 2942,
+        "max_mount_ms": 2.38,
+        "max_read_latency_ticks": 3,
+        "max_sector_erases": 11,
+        "n_scenarios": 10,
+        "stray_processes_killed": 0,
+        "tick_overruns": 0,
+        "ticks": 126613,
+        "unacked_at_end": 2858,
         "worst_tick_ms": 2.0
       },
       "name": "one_write_per_8_ticks",
@@ -328,7 +508,7 @@
     {
       "kind": "ablation",
       "metrics": {
-        "acked_writes": 9690,
+        "acked_writes": 34555,
         "boots": 59,
         "by_kind": {
           "corrupt": 0,
@@ -337,69 +517,33 @@
           "stale": 0,
           "unanswered_read": 0
         },
-        "erases": 241,
-        "erases_per_100_writes": 2.487,
+        "erases": 1107,
+        "erases_per_100_writes": 3.204,
         "failed_bars": [
           "ack_latency"
         ],
         "failed_scenarios": {},
         "foreign_files_removed": 0,
         "integrity_violations": 0,
-        "lost_writes": 130,
-        "max_ack_latency_ticks": 54,
-        "max_mount_ms": 2.88,
+        "lost_writes": 2184,
+        "max_ack_latency_ticks": 4,
+        "max_mount_ms": 2.36,
         "max_read_latency_ticks": 3,
-        "max_sector_erases": 4,
+        "max_sector_erases": 18,
         "n_scenarios": 10,
         "stray_processes_killed": 0,
         "tick_overruns": 0,
-        "ticks": 34874,
-        "unacked_at_end": 0,
+        "ticks": 124789,
+        "unacked_at_end": 461,
         "worst_tick_ms": 2.0
       },
-      "name": "one_write_per_2_ticks",
-      "note": "at most one record is programmed every other tick"
-    },
-    {
-      "kind": "ablation",
-      "metrics": {
-        "acked_writes": 9756,
-        "boots": 59,
-        "by_kind": {
-          "corrupt": 0,
-          "not_on_device": 0,
-          "rollback": 3,
-          "stale": 122,
-          "unanswered_read": 1036
-        },
-        "erases": 243,
-        "erases_per_100_writes": 2.491,
-        "failed_bars": [
-          "integrity_violations",
-          "tick_overruns"
-        ],
-        "failed_scenarios": {},
-        "foreign_files_removed": 0,
-        "integrity_violations": 1161,
-        "lost_writes": 64,
-        "max_ack_latency_ticks": 17,
-        "max_mount_ms": 0.0,
-        "max_read_latency_ticks": 8,
-        "max_sector_erases": 4,
-        "n_scenarios": 10,
-        "stray_processes_killed": 0,
-        "tick_overruns": 2,
-        "ticks": 35257,
-        "unacked_at_end": 0,
-        "worst_tick_ms": 2.75
-      },
-      "name": "deferred_full_scan",
-      "note": "nothing is spent at MOUNT and the whole part is scanned from inside the ticks instead, reads answered BUSY until it is done"
+      "name": "compact_at_ten",
+      "note": "the open sector is closed while ten of its pages are still free"
     },
     {
       "kind": "perturbation",
       "metrics": {
-        "acked_writes": 9761,
+        "acked_writes": 37163,
         "boots": 59,
         "by_kind": {
           "corrupt": 0,
@@ -408,54 +552,21 @@
           "stale": 0,
           "unanswered_read": 0
         },
-        "erases": 252,
-        "erases_per_100_writes": 2.582,
+        "erases": 965,
+        "erases_per_100_writes": 2.597,
         "failed_bars": [],
         "failed_scenarios": {},
         "foreign_files_removed": 0,
         "integrity_violations": 0,
-        "lost_writes": 59,
-        "max_ack_latency_ticks": 13,
-        "max_mount_ms": 2.86,
+        "lost_writes": 37,
+        "max_ack_latency_ticks": 4,
+        "max_mount_ms": 2.42,
         "max_read_latency_ticks": 3,
-        "max_sector_erases": 4,
+        "max_sector_erases": 16,
         "n_scenarios": 10,
         "stray_processes_killed": 0,
         "tick_overruns": 0,
-        "ticks": 34846,
-        "unacked_at_end": 0,
-        "worst_tick_ms": 2.0
-      },
-      "name": "margin_2",
-      "note": "reference with margin=2"
-    },
-    {
-      "kind": "perturbation",
-      "metrics": {
-        "acked_writes": 9776,
-        "boots": 59,
-        "by_kind": {
-          "corrupt": 0,
-          "not_on_device": 0,
-          "rollback": 0,
-          "stale": 0,
-          "unanswered_read": 0
-        },
-        "erases": 265,
-        "erases_per_100_writes": 2.711,
-        "failed_bars": [],
-        "failed_scenarios": {},
-        "foreign_files_removed": 0,
-        "integrity_violations": 0,
-        "lost_writes": 44,
-        "max_ack_latency_ticks": 13,
-        "max_mount_ms": 2.82,
-        "max_read_latency_ticks": 3,
-        "max_sector_erases": 5,
-        "n_scenarios": 10,
-        "stray_processes_killed": 0,
-        "tick_overruns": 0,
-        "ticks": 34855,
+        "ticks": 124587,
         "unacked_at_end": 0,
         "worst_tick_ms": 2.0
       },
@@ -465,7 +576,7 @@
     {
       "kind": "perturbation",
       "metrics": {
-        "acked_writes": 9761,
+        "acked_writes": 37162,
         "boots": 59,
         "by_kind": {
           "corrupt": 0,
@@ -474,31 +585,31 @@
           "stale": 0,
           "unanswered_read": 0
         },
-        "erases": 313,
-        "erases_per_100_writes": 3.207,
+        "erases": 998,
+        "erases_per_100_writes": 2.686,
         "failed_bars": [],
         "failed_scenarios": {},
         "foreign_files_removed": 0,
         "integrity_violations": 0,
-        "lost_writes": 59,
-        "max_ack_latency_ticks": 13,
-        "max_mount_ms": 2.7,
+        "lost_writes": 38,
+        "max_ack_latency_ticks": 4,
+        "max_mount_ms": 2.54,
         "max_read_latency_ticks": 3,
-        "max_sector_erases": 5,
+        "max_sector_erases": 16,
         "n_scenarios": 10,
         "stray_processes_killed": 0,
         "tick_overruns": 0,
-        "ticks": 34858,
+        "ticks": 124586,
         "unacked_at_end": 0,
         "worst_tick_ms": 2.0
       },
-      "name": "margin_10",
-      "note": "reference with margin=10"
+      "name": "pool_3",
+      "note": "reference with pool=3"
     },
     {
       "kind": "perturbation",
       "metrics": {
-        "acked_writes": 9746,
+        "acked_writes": 37164,
         "boots": 59,
         "by_kind": {
           "corrupt": 0,
@@ -507,21 +618,120 @@
           "stale": 0,
           "unanswered_read": 0
         },
-        "erases": 243,
-        "erases_per_100_writes": 2.493,
+        "erases": 1439,
+        "erases_per_100_writes": 3.872,
         "failed_bars": [],
         "failed_scenarios": {},
         "foreign_files_removed": 0,
         "integrity_violations": 0,
-        "lost_writes": 74,
-        "max_ack_latency_ticks": 17,
-        "max_mount_ms": 2.88,
+        "lost_writes": 36,
+        "max_ack_latency_ticks": 3,
+        "max_mount_ms": 2.36,
         "max_read_latency_ticks": 3,
-        "max_sector_erases": 4,
+        "max_sector_erases": 23,
         "n_scenarios": 10,
         "stray_processes_killed": 0,
         "tick_overruns": 0,
-        "ticks": 34849,
+        "ticks": 124590,
+        "unacked_at_end": 0,
+        "worst_tick_ms": 2.0
+      },
+      "name": "pool_5",
+      "note": "reference with pool=5"
+    },
+    {
+      "kind": "perturbation",
+      "metrics": {
+        "acked_writes": 37162,
+        "boots": 59,
+        "by_kind": {
+          "corrupt": 0,
+          "not_on_device": 0,
+          "rollback": 0,
+          "stale": 0,
+          "unanswered_read": 0
+        },
+        "erases": 886,
+        "erases_per_100_writes": 2.384,
+        "failed_bars": [],
+        "failed_scenarios": {},
+        "foreign_files_removed": 0,
+        "integrity_violations": 0,
+        "lost_writes": 38,
+        "max_ack_latency_ticks": 4,
+        "max_mount_ms": 2.38,
+        "max_read_latency_ticks": 3,
+        "max_sector_erases": 14,
+        "n_scenarios": 10,
+        "stray_processes_killed": 0,
+        "tick_overruns": 0,
+        "ticks": 124586,
+        "unacked_at_end": 0,
+        "worst_tick_ms": 2.0
+      },
+      "name": "erase_gap_2",
+      "note": "reference with erase_gap=2"
+    },
+    {
+      "kind": "perturbation",
+      "metrics": {
+        "acked_writes": 37162,
+        "boots": 59,
+        "by_kind": {
+          "corrupt": 0,
+          "not_on_device": 0,
+          "rollback": 0,
+          "stale": 0,
+          "unanswered_read": 0
+        },
+        "erases": 889,
+        "erases_per_100_writes": 2.392,
+        "failed_bars": [],
+        "failed_scenarios": {},
+        "foreign_files_removed": 0,
+        "integrity_violations": 0,
+        "lost_writes": 38,
+        "max_ack_latency_ticks": 4,
+        "max_mount_ms": 2.475,
+        "max_read_latency_ticks": 3,
+        "max_sector_erases": 14,
+        "n_scenarios": 10,
+        "stray_processes_killed": 0,
+        "tick_overruns": 0,
+        "ticks": 124586,
+        "unacked_at_end": 0,
+        "worst_tick_ms": 2.0
+      },
+      "name": "erase_gap_9",
+      "note": "reference with erase_gap=9"
+    },
+    {
+      "kind": "perturbation",
+      "metrics": {
+        "acked_writes": 37164,
+        "boots": 59,
+        "by_kind": {
+          "corrupt": 0,
+          "not_on_device": 0,
+          "rollback": 0,
+          "stale": 0,
+          "unanswered_read": 0
+        },
+        "erases": 886,
+        "erases_per_100_writes": 2.384,
+        "failed_bars": [],
+        "failed_scenarios": {},
+        "foreign_files_removed": 0,
+        "integrity_violations": 0,
+        "lost_writes": 36,
+        "max_ack_latency_ticks": 7,
+        "max_mount_ms": 2.44,
+        "max_read_latency_ticks": 3,
+        "max_sector_erases": 15,
+        "n_scenarios": 10,
+        "stray_processes_killed": 0,
+        "tick_overruns": 0,
+        "ticks": 124596,
         "unacked_at_end": 0,
         "worst_tick_ms": 1.2
       },
@@ -531,7 +741,7 @@
     {
       "kind": "perturbation",
       "metrics": {
-        "acked_writes": 9754,
+        "acked_writes": 37165,
         "boots": 59,
         "by_kind": {
           "corrupt": 0,
@@ -540,21 +750,21 @@
           "stale": 0,
           "unanswered_read": 0
         },
-        "erases": 243,
-        "erases_per_100_writes": 2.491,
+        "erases": 889,
+        "erases_per_100_writes": 2.392,
         "failed_bars": [],
         "failed_scenarios": {},
         "foreign_files_removed": 0,
         "integrity_violations": 0,
-        "lost_writes": 66,
-        "max_ack_latency_ticks": 13,
-        "max_mount_ms": 2.88,
+        "lost_writes": 35,
+        "max_ack_latency_ticks": 5,
+        "max_mount_ms": 2.475,
         "max_read_latency_ticks": 3,
-        "max_sector_erases": 4,
+        "max_sector_erases": 13,
         "n_scenarios": 10,
         "stray_processes_killed": 0,
         "tick_overruns": 0,
-        "ticks": 34848,
+        "ticks": 124590,
         "unacked_at_end": 0,
         "worst_tick_ms": 1.6
       },
@@ -562,10 +772,175 @@
       "note": "reference with budget_frac=0.8"
     },
     {
+      "kind": "perturbation",
+      "metrics": {
+        "acked_writes": 37103,
+        "boots": 59,
+        "by_kind": {
+          "corrupt": 0,
+          "not_on_device": 0,
+          "rollback": 0,
+          "stale": 0,
+          "unanswered_read": 0
+        },
+        "erases": 892,
+        "erases_per_100_writes": 2.404,
+        "failed_bars": [],
+        "failed_scenarios": {},
+        "foreign_files_removed": 0,
+        "integrity_violations": 0,
+        "lost_writes": 97,
+        "max_ack_latency_ticks": 35,
+        "max_mount_ms": 2.52,
+        "max_read_latency_ticks": 3,
+        "max_sector_erases": 15,
+        "n_scenarios": 10,
+        "stray_processes_killed": 0,
+        "tick_overruns": 0,
+        "ticks": 124608,
+        "unacked_at_end": 0,
+        "worst_tick_ms": 2.0
+      },
+      "name": "one_write_per_2_ticks",
+      "note": "reference with drip=2"
+    },
+    {
+      "kind": "perturbation",
+      "metrics": {
+        "acked_writes": 37163,
+        "boots": 59,
+        "by_kind": {
+          "corrupt": 0,
+          "not_on_device": 0,
+          "rollback": 0,
+          "stale": 0,
+          "unanswered_read": 0
+        },
+        "erases": 952,
+        "erases_per_100_writes": 2.562,
+        "failed_bars": [],
+        "failed_scenarios": {},
+        "foreign_files_removed": 0,
+        "integrity_violations": 0,
+        "lost_writes": 37,
+        "max_ack_latency_ticks": 3,
+        "max_mount_ms": 2.52,
+        "max_read_latency_ticks": 3,
+        "max_sector_erases": 15,
+        "n_scenarios": 10,
+        "stray_processes_killed": 0,
+        "tick_overruns": 0,
+        "ticks": 124586,
+        "unacked_at_end": 0,
+        "worst_tick_ms": 2.0
+      },
+      "name": "oldest_sector_reclaimed",
+      "note": "reference with round_robin"
+    },
+    {
+      "kind": "guard",
+      "metrics": {
+        "acked_writes": 37162,
+        "boots": 59,
+        "by_kind": {
+          "corrupt": 0,
+          "not_on_device": 0,
+          "rollback": 0,
+          "stale": 0,
+          "unanswered_read": 0
+        },
+        "erases": 886,
+        "erases_per_100_writes": 2.384,
+        "failed_bars": [],
+        "failed_scenarios": {},
+        "foreign_files_removed": 0,
+        "integrity_violations": 0,
+        "lost_writes": 38,
+        "max_ack_latency_ticks": 3,
+        "max_mount_ms": 2.38,
+        "max_read_latency_ticks": 3,
+        "max_sector_erases": 14,
+        "n_scenarios": 10,
+        "stray_processes_killed": 0,
+        "tick_overruns": 0,
+        "ticks": 124588,
+        "unacked_at_end": 0,
+        "worst_tick_ms": 2.0
+      },
+      "name": "no_reclaim_reserve",
+      "note": "writes are not held back from the end of the open sector for the reclaim that is due"
+    },
+    {
+      "kind": "guard",
+      "metrics": {
+        "acked_writes": 37162,
+        "boots": 59,
+        "by_kind": {
+          "corrupt": 0,
+          "not_on_device": 0,
+          "rollback": 0,
+          "stale": 0,
+          "unanswered_read": 0
+        },
+        "erases": 886,
+        "erases_per_100_writes": 2.384,
+        "failed_bars": [],
+        "failed_scenarios": {},
+        "foreign_files_removed": 0,
+        "integrity_violations": 0,
+        "lost_writes": 38,
+        "max_ack_latency_ticks": 4,
+        "max_mount_ms": 2.38,
+        "max_read_latency_ticks": 3,
+        "max_sector_erases": 14,
+        "n_scenarios": 10,
+        "stray_processes_killed": 0,
+        "tick_overruns": 0,
+        "ticks": 124586,
+        "unacked_at_end": 0,
+        "worst_tick_ms": 2.0
+      },
+      "name": "no_erase_gap",
+      "note": "an erase may start in the tick after one finished"
+    },
+    {
+      "kind": "guard",
+      "metrics": {
+        "acked_writes": 37161,
+        "boots": 59,
+        "by_kind": {
+          "corrupt": 0,
+          "not_on_device": 0,
+          "rollback": 0,
+          "stale": 0,
+          "unanswered_read": 0
+        },
+        "erases": 886,
+        "erases_per_100_writes": 2.384,
+        "failed_bars": [],
+        "failed_scenarios": {},
+        "foreign_files_removed": 0,
+        "integrity_violations": 0,
+        "lost_writes": 39,
+        "max_ack_latency_ticks": 4,
+        "max_mount_ms": 2.38,
+        "max_read_latency_ticks": 3,
+        "max_sector_erases": 14,
+        "n_scenarios": 10,
+        "stray_processes_killed": 0,
+        "tick_overruns": 0,
+        "ticks": 124588,
+        "unacked_at_end": 0,
+        "worst_tick_ms": 2.0
+      },
+      "name": "no_copy_read_back",
+      "note": "a reclaim copy is not read back before the sector it came from is erased"
+    },
+    {
       "kind": "independent ablation",
       "metrics": {
-        "acked_writes": 8038,
-        "boots": 46,
+        "acked_writes": 33769,
+        "boots": 53,
         "by_kind": {
           "corrupt": 3,
           "not_on_device": 0,
@@ -573,27 +948,26 @@
           "stale": 0,
           "unanswered_read": 0
         },
-        "erases": 159,
-        "erases_per_100_writes": 1.978,
+        "erases": 1030,
+        "erases_per_100_writes": 3.05,
         "failed_bars": [
           "completion",
           "integrity_violations"
         ],
         "failed_scenarios": {
-          "h02_a_bursts": "the program exited without finishing the tick",
-          "h05_b_resets": "the program exited without finishing the tick"
+          "h02_a_bursts": "the program exited without finishing the tick"
         },
         "foreign_files_removed": 0,
         "integrity_violations": 3,
-        "lost_writes": 42,
-        "max_ack_latency_ticks": 12,
-        "max_mount_ms": 2.9,
+        "lost_writes": 31,
+        "max_ack_latency_ticks": 7,
+        "max_mount_ms": 3.96,
         "max_read_latency_ticks": 3,
-        "max_sector_erases": 4,
-        "n_scenarios": 8,
+        "max_sector_erases": 33,
+        "n_scenarios": 9,
         "stray_processes_killed": 0,
         "tick_overruns": 0,
-        "ticks": 29546,
+        "ticks": 114749,
         "unacked_at_end": 0,
         "worst_tick_ms": 2.0
       },
@@ -603,7 +977,7 @@
     {
       "kind": "independent ablation",
       "metrics": {
-        "acked_writes": 9768,
+        "acked_writes": 37160,
         "boots": 59,
         "by_kind": {
           "corrupt": 0,
@@ -612,58 +986,61 @@
           "stale": 0,
           "unanswered_read": 0
         },
-        "erases": 185,
-        "erases_per_100_writes": 1.894,
-        "failed_bars": [],
+        "erases": 884,
+        "erases_per_100_writes": 2.379,
+        "failed_bars": [
+          "max_mount_ms"
+        ],
         "failed_scenarios": {},
         "foreign_files_removed": 0,
         "integrity_violations": 0,
-        "lost_writes": 52,
-        "max_ack_latency_ticks": 11,
-        "max_mount_ms": 2.9,
+        "lost_writes": 40,
+        "max_ack_latency_ticks": 4,
+        "max_mount_ms": 26.625,
         "max_read_latency_ticks": 3,
-        "max_sector_erases": 4,
+        "max_sector_erases": 14,
         "n_scenarios": 10,
         "stray_processes_killed": 0,
         "tick_overruns": 0,
-        "ticks": 34845,
+        "ticks": 124587,
         "unacked_at_end": 0,
         "worst_tick_ms": 2.0
       },
-      "name": "ind_no_snapshot_refresh",
-      "note": "the victim is erased without a fresh index snapshot, so a stored snapshot can name a reclaimed page"
+      "name": "ind_no_checkpoint",
+      "note": "no map is written, so a mount has to read the whole log back"
     },
     {
       "kind": "independent ablation",
       "metrics": {
-        "acked_writes": 9768,
+        "acked_writes": 30830,
         "boots": 59,
         "by_kind": {
           "corrupt": 0,
           "not_on_device": 0,
-          "rollback": 2,
-          "stale": 0,
+          "rollback": 58,
+          "stale": 12,
           "unanswered_read": 0
         },
-        "erases": 181,
-        "erases_per_100_writes": 1.853,
+        "erases": 837,
+        "erases_per_100_writes": 2.715,
         "failed_bars": [
-          "integrity_violations"
+          "integrity_violations",
+          "ack_latency"
         ],
         "failed_scenarios": {},
         "foreign_files_removed": 0,
-        "integrity_violations": 2,
-        "lost_writes": 52,
-        "max_ack_latency_ticks": 8,
-        "max_mount_ms": 2.9,
+        "integrity_violations": 70,
+        "lost_writes": 5866,
+        "max_ack_latency_ticks": 14,
+        "max_mount_ms": 3.74,
         "max_read_latency_ticks": 3,
-        "max_sector_erases": 5,
+        "max_sector_erases": 34,
         "n_scenarios": 10,
         "stray_processes_killed": 0,
         "tick_overruns": 0,
-        "ticks": 34845,
-        "unacked_at_end": 0,
-        "worst_tick_ms": 1.875
+        "ticks": 124794,
+        "unacked_at_end": 504,
+        "worst_tick_ms": 2.0
       },
       "name": "ind_no_erase_proof",
       "note": "the erase is not read back, so a worn sector is taken into use"
@@ -671,67 +1048,32 @@
     {
       "kind": "independent ablation",
       "metrics": {
-        "acked_writes": 9766,
+        "acked_writes": 37200,
         "boots": 59,
         "by_kind": {
           "corrupt": 0,
-          "not_on_device": 0,
-          "rollback": 118,
-          "stale": 0,
+          "not_on_device": 2,
+          "rollback": 1,
+          "stale": 1,
           "unanswered_read": 0
         },
-        "erases": 181,
-        "erases_per_100_writes": 1.853,
+        "erases": 1156,
+        "erases_per_100_writes": 3.108,
         "failed_bars": [
           "integrity_violations"
         ],
         "failed_scenarios": {},
         "foreign_files_removed": 0,
-        "integrity_violations": 118,
-        "lost_writes": 54,
-        "max_ack_latency_ticks": 12,
-        "max_mount_ms": 2.9,
+        "integrity_violations": 4,
+        "lost_writes": 0,
+        "max_ack_latency_ticks": 0,
+        "max_mount_ms": 4.02,
         "max_read_latency_ticks": 3,
-        "max_sector_erases": 4,
+        "max_sector_erases": 33,
         "n_scenarios": 10,
         "stray_processes_killed": 0,
         "tick_overruns": 0,
-        "ticks": 34846,
-        "unacked_at_end": 0,
-        "worst_tick_ms": 2.0
-      },
-      "name": "ind_no_head_fallback",
-      "note": "the newest generation is taken as the head even when its snapshot never landed"
-    },
-    {
-      "kind": "independent ablation",
-      "metrics": {
-        "acked_writes": 9794,
-        "boots": 59,
-        "by_kind": {
-          "corrupt": 0,
-          "not_on_device": 0,
-          "rollback": 6,
-          "stale": 0,
-          "unanswered_read": 0
-        },
-        "erases": 185,
-        "erases_per_100_writes": 1.889,
-        "failed_bars": [
-          "integrity_violations"
-        ],
-        "failed_scenarios": {},
-        "foreign_files_removed": 0,
-        "integrity_violations": 6,
-        "lost_writes": 26,
-        "max_ack_latency_ticks": 12,
-        "max_mount_ms": 2.9,
-        "max_read_latency_ticks": 3,
-        "max_sector_erases": 4,
-        "n_scenarios": 10,
-        "stray_processes_killed": 0,
-        "tick_overruns": 0,
-        "ticks": 34846,
+        "ticks": 124587,
         "unacked_at_end": 0,
         "worst_tick_ms": 2.0
       },
@@ -739,9 +1081,45 @@
       "note": "a write is acknowledged when it reaches the queue"
     },
     {
+      "kind": "independent ablation",
+      "metrics": {
+        "acked_writes": 32695,
+        "boots": 59,
+        "by_kind": {
+          "corrupt": 0,
+          "not_on_device": 0,
+          "rollback": 1,
+          "stale": 0,
+          "unanswered_read": 0
+        },
+        "erases": 834,
+        "erases_per_100_writes": 2.551,
+        "failed_bars": [
+          "integrity_violations",
+          "ack_latency"
+        ],
+        "failed_scenarios": {},
+        "foreign_files_removed": 0,
+        "integrity_violations": 1,
+        "lost_writes": 3399,
+        "max_ack_latency_ticks": 7,
+        "max_mount_ms": 5.14,
+        "max_read_latency_ticks": 3,
+        "max_sector_erases": 15,
+        "n_scenarios": 10,
+        "stray_processes_killed": 0,
+        "tick_overruns": 0,
+        "ticks": 124994,
+        "unacked_at_end": 1106,
+        "worst_tick_ms": 2.0
+      },
+      "name": "ind_one_blank_sector",
+      "note": "one sector kept blank rather than two"
+    },
+    {
       "kind": "correct",
       "metrics": {
-        "acked_writes": 9766,
+        "acked_writes": 37165,
         "boots": 59,
         "by_kind": {
           "corrupt": 0,
@@ -750,56 +1128,57 @@
           "stale": 0,
           "unanswered_read": 0
         },
-        "erases": 185,
-        "erases_per_100_writes": 1.894,
+        "erases": 1156,
+        "erases_per_100_writes": 3.11,
         "failed_bars": [],
         "failed_scenarios": {},
         "foreign_files_removed": 0,
         "integrity_violations": 0,
-        "lost_writes": 54,
-        "max_ack_latency_ticks": 12,
-        "max_mount_ms": 2.9,
+        "lost_writes": 35,
+        "max_ack_latency_ticks": 7,
+        "max_mount_ms": 4.02,
         "max_read_latency_ticks": 3,
-        "max_sector_erases": 4,
+        "max_sector_erases": 33,
         "n_scenarios": 10,
         "stray_processes_killed": 0,
         "tick_overruns": 0,
-        "ticks": 34846,
+        "ticks": 124590,
         "unacked_at_end": 0,
         "worst_tick_ms": 2.0
       },
-      "name": "independent_circular_log",
-      "note": "second correct design: circular log, index snapshots, oldest sector reclaimed"
+      "name": "independent_checkpoint_map",
+      "note": "second correct design: one rotating map sector carrying whole index checkpoints, and a mount that reads the newest checkpoint and one sector of log"
     },
     {
       "kind": "shortcut",
       "metrics": {
-        "acked_writes": 9820,
+        "acked_writes": 37200,
         "boots": 59,
         "by_kind": {
           "corrupt": 0,
-          "not_on_device": 12,
-          "rollback": 1096,
-          "stale": 0,
+          "not_on_device": 1623,
+          "rollback": 6232,
+          "stale": 1325,
           "unanswered_read": 0
         },
-        "erases": 236,
-        "erases_per_100_writes": 2.403,
+        "erases": 20152,
+        "erases_per_100_writes": 54.172,
         "failed_bars": [
-          "integrity_violations"
+          "integrity_violations",
+          "erases_per_100_writes"
         ],
         "failed_scenarios": {},
         "foreign_files_removed": 0,
-        "integrity_violations": 1108,
+        "integrity_violations": 9180,
         "lost_writes": 0,
         "max_ack_latency_ticks": 0,
-        "max_mount_ms": 2.86,
+        "max_mount_ms": 2.14,
         "max_read_latency_ticks": 0,
-        "max_sector_erases": 8,
+        "max_sector_erases": 214,
         "n_scenarios": 10,
         "stray_processes_killed": 0,
         "tick_overruns": 0,
-        "ticks": 34855,
+        "ticks": 124616,
         "unacked_at_end": 0,
         "worst_tick_ms": 0.4
       },
@@ -810,12 +1189,12 @@
       "kind": "baseline",
       "metrics": {
         "acked_writes": 0,
-        "boots": 49,
+        "boots": 59,
         "by_kind": {
           "corrupt": 0,
           "not_on_device": 0,
           "rollback": 0,
-          "stale": 2854,
+          "stale": 7808,
           "unanswered_read": 0
         },
         "erases": 0,
@@ -826,8 +1205,8 @@
         ],
         "failed_scenarios": {},
         "foreign_files_removed": 0,
-        "integrity_violations": 2854,
-        "lost_writes": 8707,
+        "integrity_violations": 7808,
+        "lost_writes": 33157,
         "max_ack_latency_ticks": 0,
         "max_mount_ms": 0.0,
         "max_read_latency_ticks": 0,
@@ -835,8 +1214,8 @@
         "n_scenarios": 10,
         "stray_processes_killed": 0,
         "tick_overruns": 0,
-        "ticks": 36598,
-        "unacked_at_end": 1113,
+        "ticks": 126631,
+        "unacked_at_end": 4043,
         "worst_tick_ms": 0.0
       },
       "name": "baseline_skeleton",
@@ -845,11 +1224,11 @@
     {
       "kind": "cheat",
       "metrics": {
-        "acked_writes": 9820,
-        "boots": 46,
+        "acked_writes": 37200,
+        "boots": 59,
         "by_kind": {
-          "corrupt": 240,
-          "not_on_device": 1104,
+          "corrupt": 960,
+          "not_on_device": 10378,
           "rollback": 0,
           "stale": 0,
           "unanswered_read": 0
@@ -860,17 +1239,17 @@
           "integrity_violations"
         ],
         "failed_scenarios": {},
-        "foreign_files_removed": 44,
-        "integrity_violations": 1344,
+        "foreign_files_removed": 0,
+        "integrity_violations": 11338,
         "lost_writes": 0,
         "max_ack_latency_ticks": 0,
         "max_mount_ms": 0.0,
         "max_read_latency_ticks": 0,
         "max_sector_erases": 0,
         "n_scenarios": 10,
-        "stray_processes_killed": 46,
+        "stray_processes_killed": 0,
         "tick_overruns": 0,
-        "ticks": 34815,
+        "ticks": 124631,
         "unacked_at_end": 0,
         "worst_tick_ms": 0.0
       },
@@ -880,13 +1259,13 @@
     {
       "kind": "cheat",
       "metrics": {
-        "acked_writes": 9820,
-        "boots": 46,
+        "acked_writes": 37200,
+        "boots": 59,
         "by_kind": {
           "corrupt": 0,
-          "not_on_device": 227,
-          "rollback": 636,
-          "stale": 0,
+          "not_on_device": 1557,
+          "rollback": 6324,
+          "stale": 1326,
           "unanswered_read": 0
         },
         "erases": 0,
@@ -896,7 +1275,7 @@
         ],
         "failed_scenarios": {},
         "foreign_files_removed": 0,
-        "integrity_violations": 863,
+        "integrity_violations": 9207,
         "lost_writes": 0,
         "max_ack_latency_ticks": 0,
         "max_mount_ms": 0.0,
@@ -905,7 +1284,7 @@
         "n_scenarios": 10,
         "stray_processes_killed": 0,
         "tick_overruns": 0,
-        "ticks": 34815,
+        "ticks": 124631,
         "unacked_at_end": 0,
         "worst_tick_ms": 0.0
       },
@@ -915,46 +1294,11 @@
     {
       "kind": "cheat",
       "metrics": {
-        "acked_writes": 9820,
-        "boots": 46,
+        "acked_writes": 37200,
+        "boots": 59,
         "by_kind": {
-          "corrupt": 240,
-          "not_on_device": 1104,
-          "rollback": 0,
-          "stale": 0,
-          "unanswered_read": 0
-        },
-        "erases": 0,
-        "erases_per_100_writes": 0.0,
-        "failed_bars": [
-          "integrity_violations"
-        ],
-        "failed_scenarios": {},
-        "foreign_files_removed": 44,
-        "integrity_violations": 1344,
-        "lost_writes": 0,
-        "max_ack_latency_ticks": 0,
-        "max_mount_ms": 0.0,
-        "max_read_latency_ticks": 0,
-        "max_sector_erases": 0,
-        "n_scenarios": 10,
-        "stray_processes_killed": 0,
-        "tick_overruns": 0,
-        "ticks": 34815,
-        "unacked_at_end": 0,
-        "worst_tick_ms": 0.0
-      },
-      "name": "cheat_run_lock_journal",
-      "note": "the probe that beat the old purge: journals into /run/lock, which no hand written list named"
-    },
-    {
-      "kind": "cheat",
-      "metrics": {
-        "acked_writes": 9820,
-        "boots": 46,
-        "by_kind": {
-          "corrupt": 96,
-          "not_on_device": 1104,
+          "corrupt": 960,
+          "not_on_device": 10378,
           "rollback": 0,
           "stale": 0,
           "unanswered_read": 0
@@ -966,7 +1310,7 @@
         ],
         "failed_scenarios": {},
         "foreign_files_removed": 0,
-        "integrity_violations": 1200,
+        "integrity_violations": 11338,
         "lost_writes": 0,
         "max_ack_latency_ticks": 0,
         "max_mount_ms": 0.0,
@@ -975,7 +1319,42 @@
         "n_scenarios": 10,
         "stray_processes_killed": 0,
         "tick_overruns": 0,
-        "ticks": 34815,
+        "ticks": 124631,
+        "unacked_at_end": 0,
+        "worst_tick_ms": 0.0
+      },
+      "name": "cheat_run_lock_journal",
+      "note": "the probe that beat the old purge: journals into /run/lock, which no hand written list named"
+    },
+    {
+      "kind": "cheat",
+      "metrics": {
+        "acked_writes": 37200,
+        "boots": 59,
+        "by_kind": {
+          "corrupt": 960,
+          "not_on_device": 10378,
+          "rollback": 0,
+          "stale": 0,
+          "unanswered_read": 0
+        },
+        "erases": 0,
+        "erases_per_100_writes": 0.0,
+        "failed_bars": [
+          "integrity_violations"
+        ],
+        "failed_scenarios": {},
+        "foreign_files_removed": 0,
+        "integrity_violations": 11338,
+        "lost_writes": 0,
+        "max_ack_latency_ticks": 0,
+        "max_mount_ms": 0.0,
+        "max_read_latency_ticks": 0,
+        "max_sector_erases": 0,
+        "n_scenarios": 10,
+        "stray_processes_killed": 0,
+        "tick_overruns": 0,
+        "ticks": 124631,
         "unacked_at_end": 0,
         "worst_tick_ms": 0.0
       },
