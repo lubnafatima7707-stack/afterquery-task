@@ -2,27 +2,30 @@
 """
 Reference non volatile block store for the ECU flash device.
 
-Layout. Every sector carries a header in page 0 holding a generation number and
-a seal in page 1 that is programmed only once the sector holds a complete copy
-of every live block, so a sector whose header is present but whose seal is
-missing was being filled when the supply went away and is ignored. Records are
-appended one to a page from page 2 upwards, each carrying its block, its length,
-a record sequence number and a checksum over all of it, so a page left half
-programmed by a reset fails its checksum and is skipped without being reused.
-All live records sit in the active sector, which is what keeps the mount inside
-its budget: the mount reads the sector headers, one seal, and the pages of the
-active sector only.
+The live set no longer fits in one sector, so the part is run as an append only
+log across all of them and the two things that decide a run are where the log is
+reclaimed from and how a mount finds its way back without reading everything.
 
-When the active sector runs out of pages the store compacts: it erases the next
-sector in rotation, reads back every page to prove the erase took, writes the
-new header, copies the newest record of each live block forward, and only then
-writes the seal. A reset anywhere inside that sequence leaves the old sector
-sealed and authoritative and the new one unsealed and ignored, so the worst case
-is the work being done again.
+Layout. Page 0 of a sector holds a header with the generation number it was
+opened at. Records are appended one to a page from page 1 upwards, each carrying
+its block, its length, a record sequence number and a checksum, so a page left
+half programmed by a reset fails its checksum and is skipped. The last few pages
+of a sector are reserved for a summary, written when the sector is closed, that
+lists the block held in every page of it. Mount then reads the sector headers,
+the summary of each closed sector in generation order, and the pages of the one
+sector still open; a summary that a reset spoiled costs a scan of that sector
+alone.
 
-The VARIANT string is an authoring switch. It is empty in the shipped solution
-and every value it accepts only removes a piece of the design, which is how the
-ablation numbers in authoring/evidence were measured.
+Reclaim. With the part about seven tenths full, which sector to erase is the
+whole game: the store keeps a live count per sector and takes the one holding
+the fewest live records, so a sector of cold blocks that have all been rewritten
+costs almost no copying while a round robin choice pays for the live ones every
+time. Copies are ordinary appends, so a reset in the middle of one leaves both
+the old record and the partial copy and the newer generation wins. The victim is
+erased only once its live records are appended elsewhere.
+
+The VARIANT string is the authoring switch. It is empty in the shipped solution
+and every value it accepts only removes a piece of the design.
 """
 import json
 import sys
@@ -30,11 +33,12 @@ import zlib
 
 VARIANT = ""
 
-HDR_MAGIC = b"NVH1"
-SEAL_MAGIC = b"NVS1"
-REC_MAGIC = 0x52
-REC_OVERHEAD = 11
-GC_MARGIN = 0
+HDR_MAGIC = b"NVH2"
+SUM_TAG = 0x53
+REC_TAG = 0x52
+REC_OVERHEAD = 12
+SUM_OVERHEAD = 12
+ENTRY = 3
 
 
 def _crc(data):
@@ -65,22 +69,45 @@ class Store:
         self.t_read = float(cfg["t_read_ms"])
         self.t_prog = float(cfg["t_program_ms"])
         self.block_len = list(cfg["blocks"])
-        self.blank = bytes([0xFF]) * self.B
+        self.n_blocks = len(self.block_len)
+        self.blank_page = bytes([0xFF]) * self.B
         self.flags, self.knobs = _flags()
         self.budget = float(cfg["tick_budget_ms"]) * self.knobs.get("budget_frac", 1.0)
-        self.margin = int(self.knobs.get("margin", GC_MARGIN))
-        self.drip = int(self.knobs.get("drip", 0))
-        self.last_program_tick = -999
+        self.per_page = max(1, (self.B - SUM_OVERHEAD) // ENTRY)
+        self.summary_pages = self._summary_pages()
+        self.last_record = self.P - 1 - self.summary_pages
         self.used = 0.0
         self.tick = int(cfg.get("tick", 0))
         self.index = {}
+        self.live = [0] * self.S
+        self.gen = {}
         self.pending = []
         self.retired = set()
-        self.active = None
+        # sectors this run has erased and read back, so they are known blank; a
+        # sector that merely has no header is not, because an erase interrupted by
+        # a reset leaves one looking free while it still holds live records
+        self.wiped = set()
+        self.head = None
         self.append = None
         self.seq = 0
         self.rseq = 1
         self.gc = None
+        self.drip = int(self.knobs.get("drip", 0))
+        # An erase takes the part away for several ticks, and a read arriving in
+        # that window can only be told to come back. Two erases in a row leave no
+        # window at all inside the read deadline, so one is not started until the
+        # part has been readable again for a moment.
+        self.erase_gap = int(self.knobs.get("erase_gap", 5))
+        # how many sectors are kept blank; see _need_gc for why one is not enough
+        self.pool = max(1, int(self.knobs.get("pool", 2)))
+        self.last_erase = -999
+        self.last_program_tick = -999
+
+    def _summary_pages(self):
+        pages = 1
+        while pages * self.per_page < self.P - 1 - pages:
+            pages += 1
+        return pages
 
     # ----------------------------------------------------------- device access
 
@@ -94,14 +121,13 @@ class Store:
             return True
         return self.used + cost <= self.budget + 1e-9
 
-    def read_page(self, sector, page, charge=True):
+    def read_page(self, sector, page):
         reply = self._op("READ %d %d" % (sector, page))
         if reply == "BUSY":
             return None
         if not reply.startswith("DATA "):
             raise SystemExit(0)
-        if charge:
-            self.used += self.t_read
+        self.used += self.t_read
         return bytes.fromhex(reply[5:])
 
     def program_page(self, sector, page, payload):
@@ -119,14 +145,19 @@ class Store:
 
     def busy_ticks(self):
         reply = self._op("STATUS")
-        if reply.startswith("BUSY"):
-            return int(reply.split()[1])
-        return 0
+        return int(reply.split()[1]) if reply.startswith("BUSY") else 0
+
+    def settled_read(self, sector, page):
+        for _ in range(64):
+            data = self.read_page(sector, page)
+            if data is not None:
+                return data
+        return None
 
     # ------------------------------------------------------------ page formats
 
     def is_erased(self, page):
-        return page == self.blank
+        return page == self.blank_page
 
     def header_bytes(self, seq):
         body = HDR_MAGIC + seq.to_bytes(4, "little")
@@ -139,115 +170,131 @@ class Store:
             return None
         return int.from_bytes(page[4:8], "little")
 
-    def seal_bytes(self, seq, live):
-        body = SEAL_MAGIC + seq.to_bytes(4, "little") + live.to_bytes(2, "little")
-        return body + _crc(body)
-
-    def parse_seal(self, page):
-        if page is None or len(page) < 14 or page[:4] != SEAL_MAGIC:
-            return None
-        if _crc(page[:10]) != page[10:14]:
-            return None
-        return int.from_bytes(page[4:8], "little")
-
     def record_bytes(self, block, rseq, value):
-        body = (bytes([REC_MAGIC, block, len(value)])
+        body = (bytes([REC_TAG]) + block.to_bytes(2, "little") + bytes([len(value)])
                 + rseq.to_bytes(4, "little") + value)
         return body + _crc(body)
 
     def parse_record(self, page):
-        if page is None or len(page) < REC_OVERHEAD or page[0] != REC_MAGIC:
+        if page is None or len(page) < REC_OVERHEAD or page[0] != REC_TAG:
             return None
-        block = page[1]
-        length = page[2]
-        if block >= len(self.block_len):
+        block = int.from_bytes(page[1:3], "little")
+        length = page[3]
+        if block >= self.n_blocks:
             return None
         if "no_crc" in self.flags:
             length = min(length, self.B - REC_OVERHEAD)
         elif length > self.B - REC_OVERHEAD:
             return None
-        body = page[:7 + length]
-        if "no_crc" not in self.flags and _crc(body) != page[7 + length:11 + length]:
+        body = page[:8 + length]
+        if "no_crc" not in self.flags and _crc(body) != page[8 + length:12 + length]:
             return None
-        rseq = int.from_bytes(page[3:7], "little")
-        return block, rseq, bytes(page[7:7 + length])
+        rseq = int.from_bytes(page[4:8], "little")
+        return block, rseq, bytes(page[8:8 + length])
+
+    def summary_bytes(self, chunk, chunks, entries):
+        body = bytearray([SUM_TAG, chunk, chunks]) + self.seq.to_bytes(4, "little")
+        for page, block in entries:
+            body += bytes([page]) + block.to_bytes(2, "little")
+        return bytes(body) + _crc(bytes(body))
+
+    def parse_summary(self, page):
+        if page is None or len(page) < SUM_OVERHEAD or page[0] != SUM_TAG:
+            return None
+        chunk, chunks = page[1], page[2]
+        count = (len(page) - 11) // ENTRY
+        body = None
+        for n in range(count, -1, -1):
+            end = 7 + n * ENTRY
+            if _crc(page[:end]) == page[end:end + 4]:
+                body = page[7:end]
+                break
+        if body is None:
+            return None
+        entries = []
+        for i in range(0, len(body), ENTRY):
+            entries.append((body[i], int.from_bytes(body[i + 1:i + 3], "little")))
+        return chunk, chunks, entries
 
     # ------------------------------------------------------------------- mount
 
-    def _read_settled(self, sector, page):
-        for _ in range(64):
-            data = self.read_page(sector, page)
-            if data is not None:
-                return data
-        return None
-
     def mount(self):
-        if "lazy_scan" in self.flags:
-            # Authoring probe only: spend nothing at MOUNT and scan the whole part
-            # from inside the ticks instead, answering reads BUSY until it is done.
-            self.lazy = {"pos": 0, "pages": {},
-                         "targets": [(sector, page) for sector in range(self.S)
-                                     for page in range(self.P)]}
-            return
-        self.lazy = None
         headers = {}
         for sector in range(self.S):
-            seq = self.parse_header(self._read_settled(sector, 0))
+            seq = self.parse_header(self.settled_read(sector, 0))
             if seq is not None:
                 headers[sector] = seq
-        self.seq = max(headers.values()) if headers else 0
-        authoritative = None
-        for sector in sorted(headers, key=lambda s: -headers[s]):
-            if "no_seal" in self.flags:
-                authoritative = sector
-                break
-            if self.parse_seal(self._read_settled(sector, 1)) == headers[sector]:
-                authoritative = sector
-                break
-        if authoritative is None:
-            self._mount_blank()
+        if not headers:
+            self._format()
             return
-        self.active = authoritative
-        if "full_scan" in self.flags:
-            for sector in range(self.S):
-                self._scan_sector(sector, sector == authoritative, True)
-        else:
-            self._scan_sector(authoritative, True, True)
+        self.gen = headers
+        self.seq = max(headers.values())
+        order = sorted(headers, key=lambda s: headers[s])
+        head = order[-1]
+        for sector in order:
+            if sector == head:
+                continue
+            if "no_summary" in self.flags or not self._apply_summary(sector):
+                self._scan_sector(sector)
+        self.head = head
+        self._scan_sector(head, track_append=True)
 
-    def _scan_sector(self, sector, is_active, build_index):
-        page = 2
+    def _apply_summary(self, sector):
+        entries = []
+        for i in range(self.summary_pages):
+            page = self.settled_read(sector, self.P - self.summary_pages + i)
+            parsed = self.parse_summary(page)
+            if parsed is None:
+                return False
+            entries.extend(parsed[2])
+        for page, block in entries:
+            if block < self.n_blocks and 1 <= page <= self.last_record:
+                self._place(block, sector, page)
+        return True
+
+    def _scan_sector(self, sector, track_append=False):
+        page = 1
         append = None
-        while page < self.P:
-            data = self._read_settled(sector, page)
+        while page <= self.last_record:
+            data = self.settled_read(sector, page)
             if self.is_erased(data):
                 append = page
                 break
-            record = self.parse_record(data) if build_index else None
+            record = self.parse_record(data)
             if record is not None:
-                block, rseq, value = record
-                held = self.index.get(block)
-                if held is None or rseq > held[2]:
-                    self.index[block] = (sector, page, rseq)
+                block, rseq, _value = record
+                self._place(block, sector, page)
                 if rseq >= self.rseq:
                     self.rseq = rseq + 1
             page += 1
-        if is_active:
+        if track_append:
             self.append = append
 
-    def _mount_blank(self):
+    def _place(self, block, sector, page):
+        old = self.index.get(block)
+        if old is not None:
+            self.live[old[0]] -= 1
+        self.index[block] = (sector, page)
+        self.live[sector] += 1
+
+    def _format(self):
         for sector in range(self.S):
-            page = self._read_settled(sector, 0)
+            page = self.settled_read(sector, 0)
             if page is not None and self.is_erased(page):
+                self.seq = 1
                 if self.program_page(sector, 0, self.header_bytes(1)):
-                    if self.program_page(sector, 1, self.seal_bytes(1, 0)):
-                        self.active = sector
-                        self.seq = 1
-                        self._scan_sector(sector, True, False)
-                        return
-        self.active = None
+                    self.head = sector
+                    self.gen = {sector: 1}
+                    # page 0 reading blank does not make the rest of the sector
+                    # blank: a reset during an erase leaves the head of a sector
+                    # wiped and the tail of it still holding records
+                    self._scan_sector(sector, track_append=True)
+                    if self.append is None:
+                        self.append = self.last_record + 1
+                    return
+        self.head = None
         self.append = None
-        self.gc = {"phase": "pick", "target": None, "newseq": self.seq + 1,
-                   "copy": [], "verify": 0, "done": []}
+        self.gc = None
 
     # ---------------------------------------------------------------- the tick
 
@@ -259,11 +306,6 @@ class Store:
         self.pending.append([rid, block, value])
 
     def run_tick(self, reads):
-        if getattr(self, "lazy", None) is not None:
-            for rid, _block in reads:
-                self.out.write("VALUE %d BUSY\n" % rid)
-            self._lazy_mount_tick()
-            return
         self._answer(reads)
         if "ack_early" in self.flags:
             for item in self.pending:
@@ -271,49 +313,8 @@ class Store:
                     item.append(True)
                     self.out.write("ACK %d\n" % item[0])
         self._drain_writes()
+        self._need_gc()
         self._advance_gc()
-
-    def _lazy_mount_tick(self):
-        lazy = self.lazy
-        while lazy["pos"] < len(lazy["targets"]):
-            if not self._afford(self.t_read):
-                return
-            sector, page = lazy["targets"][lazy["pos"]]
-            data = self.read_page(sector, page)
-            if data is None:
-                return
-            lazy["pages"][(sector, page)] = data
-            lazy["pos"] += 1
-        pages = lazy["pages"]
-        headers = {}
-        for sector in range(self.S):
-            seq = self.parse_header(pages.get((sector, 0)))
-            if seq is not None:
-                headers[sector] = seq
-        self.seq = max(headers.values()) if headers else 0
-        authoritative = None
-        for sector in sorted(headers, key=lambda s: -headers[s]):
-            if self.parse_seal(pages.get((sector, 1))) == headers[sector]:
-                authoritative = sector
-                break
-        self.lazy = None
-        if authoritative is None:
-            self._mount_blank()
-            return
-        self.active = authoritative
-        for page in range(2, self.P):
-            data = pages.get((authoritative, page))
-            if self.is_erased(data):
-                self.append = page
-                break
-            record = self.parse_record(data)
-            if record is not None:
-                block, rseq, _value = record
-                held = self.index.get(block)
-                if held is None or rseq > held[2]:
-                    self.index[block] = (authoritative, page, rseq)
-                if rseq >= self.rseq:
-                    self.rseq = rseq + 1
 
     def _answer(self, reads):
         for rid, block in reads:
@@ -330,37 +331,60 @@ class Store:
                 self.out.write("VALUE %d NONE\n" % rid)
                 continue
             page = self.read_page(held[0], held[1])
-            if page is None:
+            record = self.parse_record(page) if page is not None else None
+            if record is None or record[0] != block:
                 self.out.write("VALUE %d BUSY\n" % rid)
-                continue
-            record = self.parse_record(page)
-            if record is None:
-                self.out.write("VALUE %d BUSY\n" % rid)
-                continue
-            self.out.write("VALUE %d %s\n" % (rid, record[2].hex()))
+            else:
+                self.out.write("VALUE %d %s\n" % (rid, record[2].hex()))
+
+    def blanks(self):
+        """Sectors this run has erased, or read, and found blank."""
+        return sorted(self.wiped - self.retired)
+
+    def _owed(self):
+        """Pages the open sector has to keep back for the reclaim that is due.
+
+        A copy has nowhere to go once the sector it is being written into is
+        full, and the sector it came from cannot be given up until its last live
+        record is out of it. Writes therefore stop short of the end of the open
+        sector by as much as the next reclaim will need, which costs nothing:
+        the copies drain within a tick or two of being owed.
+        """
+        if "no_reserve" in self.flags:
+            return 0
+        gc = self.gc
+        if gc is not None and gc.get("phase") == "salvage":
+            return len(gc.get("copy") or ())
+        if self.blanks():
+            # one blank sector in hand is enough to roll onto, and holding pages
+            # back for a second one that a full part has no room to make would
+            # stop the writes for good
+            return 0
+        victim = self._victim()
+        return 0 if victim is None else self.live[victim]
+
 
     def _drain_writes(self):
-        if self.gc is not None:
-            return
         if self.drip and self.tick - self.last_program_tick < self.drip:
             return
         while self.pending:
-            if self.active is None or self.append is None or self.append >= self.P:
-                self._need_gc()
+            if self.head is None or self.append is None or self.append > self.last_record:
+                return
+            if self.append > self.last_record - self._owed():
                 return
             if not self._afford(self.t_prog + self.t_read):
                 return
             rid, block, value = self.pending[0][:3]
             early = len(self.pending[0]) > 3
             page = self.append
-            if not self.program_page(self.active, page, self.record_bytes(block, self.rseq, value)):
+            if not self.program_page(self.head, page, self.record_bytes(block, self.rseq, value)):
                 return
             self.append += 1
-            check = self.read_page(self.active, page)
+            check = self.read_page(self.head, page)
             record = self.parse_record(check) if check is not None else None
             if record is None or record[2] != value:
                 continue
-            self.index[block] = (self.active, page, self.rseq)
+            self._place(block, self.head, page)
             self.rseq += 1
             self.pending.pop(0)
             self.last_program_tick = self.tick
@@ -368,122 +392,245 @@ class Store:
                 self.out.write("ACK %d\n" % rid)
             if self.drip:
                 return
-        self._need_gc()
+
+    def free_sectors(self):
+        return [s for s in range(self.S)
+                if s not in self.gen and s not in self.retired]
 
     def _need_gc(self):
-        if self.gc is not None or self.active is None:
+        """Decide what the part owes itself next.
+
+        Two sectors are kept blank rather than one. A sector is given up only
+        after an erase of it reads back written twice, and that is found out at
+        the end of a reclaim, when its live records have already been copied
+        into the open sector and there is no longer room there to reclaim a
+        second one. The spare blank sector is what the part rolls onto in that
+        case, and a pool of one leaves it with a full sector, nothing blank, and
+        no way to make anything blank.
+        """
+        if self.gc is not None:
             return
-        free = self.P - (self.append if self.append is not None else self.P)
-        if free <= self.margin:
-            self.gc = {"phase": "pick", "target": None, "newseq": self.seq + 1,
-                       "copy": sorted(self.index), "verify": 0, "done": []}
+        margin = int(self.knobs.get("margin", 2))
+        blanks = self.blanks()
+        open_sector = self.head is not None and self.append is not None
+        room = self.last_record - self.append + 1 if open_sector else 0
+        if len(blanks) >= self.pool and room > margin:
+            return
+        if len(blanks) < self.pool:
+            spare = [s for s in self.free_sectors() if s not in self.wiped]
+            if spare:
+                # a sector carrying no header is usually blank already, and
+                # reading it costs a fraction of what erasing it does, so it is
+                # only erased when it turns out to still hold something
+                return self._begin(self._cycle("check", target=spare[0],
+                                               after="done", tries=0))
+            victim = self._victim()
+            if (victim is not None and open_sector
+                    and room >= self.live[victim] + margin):
+                return self._begin(self._cycle("salvage", victim=victim,
+                                               copy=self._live_blocks(victim),
+                                               after="done"))
+        if room > margin or not blanks:
+            # There is nothing to do here even with the pool short. Rolling onto
+            # a blank sector early would not make one: an open sector rolled at
+            # half full is half a sector of erases thrown away every time round,
+            # and the pool comes back on its own once a reclaim fits in what the
+            # open sector has left.
+            return
+        self.gc = self._start_seal()
 
-    # ------------------------------------------------------------- compaction
+    def _begin(self, cycle):
+        self.gc = cycle
 
-    def _pick_target(self):
-        start = 0 if self.active is None else self.active
-        for step in range(1, self.S + 1):
-            cand = (start + step) % self.S
-            if cand == self.active or cand in self.retired:
+
+    def _cycle(self, phase, **extra):
+        cycle = {"phase": phase, "target": None, "victim": None, "copy": [],
+                 "verify": 0, "chunk": 0, "entries": [], "sealing": None,
+                 "after": "done", "tries": 1}
+        cycle.update(extra)
+        return cycle
+
+
+    # -------------------------------------------------------------- reclaiming
+
+    def _start_seal(self):
+        """Close the head to writes and fix what its summary will say.
+
+        The summary has to describe one fixed moment. Composing it again on the
+        next tick, after another record had landed, leaves chunks that disagree
+        and a block that appears in none of them, and that block's only copy is
+        then erased along with its sector.
+        """
+        entries = sorted((spot[1], block) for block, spot in self.index.items()
+                         if spot[0] == self.head)
+        sealing = self.head
+        self.append = None
+        return self._cycle("seal", entries=entries, sealing=sealing)
+
+    def _live_blocks(self, sector):
+        if sector is None:
+            return []
+        return [b for b, spot in self.index.items() if spot[0] == sector]
+
+    def _victim(self):
+        best, score = None, None
+        for sector in self.gen:
+            if sector == self.head or sector in self.retired:
                 continue
-            return cand
-        return None
+            if "round_robin" in self.flags:
+                if best is None or self.gen[sector] < self.gen[best]:
+                    best = sector
+                continue
+            if score is None or self.live[sector] < score:
+                best, score = sector, self.live[sector]
+        return best
 
     def _advance_gc(self):
         gc = self.gc
         while gc is not None:
             phase = gc["phase"]
-            if phase == "pick":
-                target = self._pick_target()
-                if target is None:
+            if phase == "seal":
+                if self.head is None or gc.get("sealing") is None:
+                    gc["phase"] = "open"
+                    continue
+                if not self._write_summary(gc):
                     return
-                gc["target"] = target
+                gc["phase"] = "open"
+                continue
+            if phase == "open":
+                ready = sorted(self.wiped - self.retired)
+                if not ready:
+                    spare = [s for s in self.free_sectors() if s not in self.wiped]
+                    if not spare:
+                        return
+                    gc["target"] = spare[0]
+                    gc["phase"] = "check"
+                    gc["after"] = "open"
+                    gc["tries"] = 0
+                    gc["verify"] = 0
+                    continue
+                target = ready[0]
+                if not self._afford(self.t_prog):
+                    return
+                self.seq += 1
+                if not self.program_page(target, 0, self.header_bytes(self.seq)):
+                    return
+                self.wiped.discard(target)
+                self.gen[target] = self.seq
+                self.head = target
+                self.append = 1
+                gc["phase"] = "done"
+                continue
+            if phase == "wipe":
+                target = gc["target"]
+                if (self.tick - self.last_erase < self.erase_gap
+                        and "no_erase_gap" not in self.flags):
+                    return
                 if not self.erase_sector(target):
                     return
-                gc["phase"] = "wait"
+                self.last_erase = self.tick
+                self.gen.pop(target, None)
+                self.live[target] = 0
+                gc["phase"] = "settle"
+                gc["verify"] = 0
                 return
-            if phase == "wait":
+            if phase == "settle":
                 if self.busy_ticks() > 0:
                     return
-                gc["phase"] = "verify"
-                gc["verify"] = 0
+                gc["phase"] = "check"
                 continue
-            if phase == "verify":
+            if phase == "check":
+                target = gc["target"]
                 if "no_erase_verify" in self.flags:
-                    gc["phase"] = "header"
+                    self.wiped.add(target)
+                    gc["phase"] = gc["after"]
                     continue
                 while gc["verify"] < self.P:
                     if not self._afford(self.t_read):
                         return
-                    data = self.read_page(gc["target"], gc["verify"])
+                    data = self.read_page(target, gc["verify"])
                     if data is None:
                         return
                     if not self.is_erased(data):
-                        self.retired.add(gc["target"])
-                        gc["phase"] = "pick"
+                        # a reset in the middle of an erase leaves the sector
+                        # half wiped, which another erase fixes; a sector that
+                        # still reads back written after a second erase is worn
+                        # out and is the only kind worth giving up on
+                        gc["tries"] = gc.get("tries", 1) + 1
+                        if gc["tries"] <= int(self.knobs.get("erase_tries", 2)):
+                            gc["phase"] = "wipe"
+                        else:
+                            self.retired.add(target)
+                            self.wiped.discard(target)
+                            gc["phase"] = gc["after"]
                         break
                     gc["verify"] += 1
-                if gc["phase"] == "pick":
+                if gc["phase"] != "check":
                     continue
-                if gc["verify"] >= self.P:
-                    gc["phase"] = "header"
+                self.wiped.add(target)
+                gc["phase"] = gc["after"]
                 continue
-            if phase == "header":
-                if not self._afford(self.t_prog):
+            if phase == "salvage":
+                victim = gc.get("victim")
+                if victim is None:
+                    self.gc = None
                     return
-                if not self.program_page(gc["target"], 0, self.header_bytes(gc["newseq"])):
-                    return
-                gc["phase"] = "copy"
-                gc["next_page"] = 2
-                gc["new_index"] = {}
-                continue
-            if phase == "copy":
                 while gc["copy"]:
-                    if not self._afford(self.t_read + self.t_prog):
+                    if self.append is None or self.append > self.last_record:
+                        return
+                    if not self._afford(2 * self.t_read + self.t_prog):
                         return
                     block = gc["copy"][0]
-                    held = self.index.get(block)
-                    if held is None:
+                    spot = self.index.get(block)
+                    if spot is None or spot[0] != victim:
                         gc["copy"].pop(0)
                         continue
-                    data = self.read_page(held[0], held[1])
+                    data = self.read_page(spot[0], spot[1])
                     if data is None:
                         return
                     record = self.parse_record(data)
-                    if record is None:
+                    if record is None or record[0] != block:
                         gc["copy"].pop(0)
                         continue
-                    page = gc["next_page"]
-                    if page >= self.P:
-                        gc["copy"] = []
-                        break
-                    if not self.program_page(gc["target"], page,
-                                             self.record_bytes(block, record[1], record[2])):
+                    page = self.append
+                    if not self.program_page(self.head, page,
+                                             self.record_bytes(block, self.rseq, record[2])):
                         return
-                    gc["next_page"] += 1
-                    gc["new_index"][block] = (gc["target"], page, record[1])
+                    self.append += 1
+                    self.rseq += 1
+                    self._place(block, self.head, page)
                     gc["copy"].pop(0)
-                gc["phase"] = "seal"
+                gc["phase"] = "erase"
                 continue
-            if phase == "seal":
-                if "no_seal" in self.flags:
-                    self._switch(gc)
-                    return
-                if not self._afford(self.t_prog):
-                    return
-                if not self.program_page(gc["target"], 1,
-                                         self.seal_bytes(gc["newseq"], len(gc["new_index"]))):
-                    return
-                self._switch(gc)
+            if phase == "erase":
+                gc["target"] = gc["victim"]
+                gc["after"] = "done"
+                gc["phase"] = "wipe"
+                gc["tries"] = 1
+                continue
+            if phase == "done":
+                self.gc = None
                 return
             return
 
-    def _switch(self, gc):
-        self.index = gc["new_index"]
-        self.active = gc["target"]
-        self.append = gc["next_page"]
-        self.seq = gc["newseq"]
-        self.gc = None
+    def _write_summary(self, gc):
+        """Close a sector with a list of what every page of it holds."""
+        if "no_summary" in self.flags:
+            return True
+        entries = gc["entries"]
+        sealing = gc.get("sealing", self.head)
+        chunks = self.summary_pages
+        while gc["chunk"] < chunks:
+            if not self._afford(self.t_prog):
+                return False
+            start = gc["chunk"] * self.per_page
+            part = entries[start:start + self.per_page]
+            page = self.P - self.summary_pages + gc["chunk"]
+            if not self.program_page(sealing, page,
+                                     self.summary_bytes(gc["chunk"], chunks, part)):
+                return False
+            gc["chunk"] += 1
+        return True
 
 
 def main():
