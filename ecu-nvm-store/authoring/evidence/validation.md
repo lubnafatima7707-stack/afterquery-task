@@ -29,9 +29,9 @@ runs the three development scenarios and prints the same measurements, and repor
 
 The verifier was run three times over the reference output. All three gave `6 passed` and identical
 numbers: 0 violations, 2.540 ms worst mount, 0 tick overruns, 4 ticks worst acknowledgement, 0
-writes left unacknowledged, 2.686 erases per 100 writes, 59 boots. Regenerating the
-scenarios with `python authoring/provenance/generate_scenarios.py .` reproduces all 13 data files
-byte for byte, compared by hash.
+writes left unacknowledged, 2.686 erases per 100 writes, 59 boots. Regenerating the scenarios with
+`python authoring/provenance/generate_scenarios.py .` reproduces all 13 data files byte for byte,
+compared by hash.
 
 ## Failure and hostile cases
 
@@ -130,7 +130,7 @@ claiming a crux that does not measure:
   the store out of on this set: the copies drain within a tick or two of being owed, so the reserve
   is never the thing that saves the run.
 - the gap between erases, which stops two erases starting back to back so a read is not refused
-  through both windows. With the reference at 2.384 erases per 100 writes the erases are far enough
+  through both windows. With the reference at 2.686 erases per 100 writes the erases are far enough
   apart that the gap never binds.
 - the read back of a reclaim copy before the sector it came from is erased. It guards against a copy
   landing on a page that has stopped taking programs, which none of the worn sectors in the graded

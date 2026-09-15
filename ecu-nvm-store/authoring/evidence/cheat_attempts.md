@@ -2,8 +2,8 @@
 
 Every program named here lives in `cheats/` and was run through `tests/harness.py` against the
 graded scenarios, with `/logs/verifier` made root owned and mode 700 and `/tests` made unreadable by
-the `runner` user, exactly as the verifier image and `tests/test.sh` leave them. None of them is ever
-executed by the verifier.
+the `runner` user, exactly as the verifier image and `tests/test.sh` leave them. None of them is
+ever executed by the verifier.
 
 | attempt | what it does | outcome |
 |---|---|---|
@@ -52,8 +52,8 @@ A reset now takes everything but the flash with it, in `Runner._purge_foreign_st
   temporary files are swept as well
 
 The probe was widened to try all of those paths and the daemon, and kept in `cheats/file_backed.py`.
-It now scores 11338 integrity violations, and the run report
-carries the count of what was taken away from it so the enforcement is visible rather than implied.
+It now scores 11338 integrity violations, and the run report carries the count of what was taken
+away from it so the enforcement is visible rather than implied.
 `authoring/evidence/bundle_checks.py` fails if any part of this is removed from the harness, or if
 the copy of the driver given to the agent stops matching the one that grades.
 
@@ -112,24 +112,24 @@ never erases anything and mounts in no time. It fails on integrity alone, and on
 resets. That is the evidence that the integrity bar is carried by the power cuts rather than by the
 workload.
 
-It also found an earlier hole in the harness. Resets used to be triggered by counting
-device operations after a request ordinal, so a program that issued no operations was never reset at
-all and `ram_only.py` passed every bar. Each reset now carries a deadline in ticks and happens
-anyway if the operation it was aimed at never comes, which is what the `IDLE` entries in the reset
-log are. After that change the same program loses 9207 blocks, and no process of it survives the run.
+It also found an earlier hole in the harness. Resets used to be triggered by counting device
+operations after a request ordinal, so a program that issued no operations was never reset at all
+and `ram_only.py` passed every bar. Each reset now carries a deadline in ticks and happens anyway if
+the operation it was aimed at never comes, which is what the `IDLE` entries in the reset log are.
+After that change the same program loses 9207 blocks, and no process of it survives the run.
 
 ## One deliberately weakened reference that crashes rather than lies
 
 `no_record_checksum`, the ablation that believes a page on its tag byte alone, is worth a note
-because its failure is not only a wrong value. On one of the ten scenarios it reads a length out of a
-half programmed page, asks for something the device rejects, and the process exits mid tick, so it
+because its failure is not only a wrong value. On one of the ten scenarios it reads a length out of
+a half programmed page, asks for something the device rejects, and the process exits mid tick, so it
 fails both the completion test and the integrity bar. A checksum over the whole record is what turns
 a torn page into a page that is skipped.
 
 ## The third hole: the right question asked at the wrong moment
 
-The next probe passed with reward 1 against a harness that checked a returned value against the flash
-image as it stood when the read was answered. It combined three things, and only the last one
+The next probe passed with reward 1 against a harness that checked a returned value against the
+flash image as it stood when the read was answered. It combined three things, and only the last one
 mattered:
 
 1. a daemon that re execs itself with every `NVM_` variable stripped, so matching on the run's own
@@ -143,10 +143,10 @@ mattered:
 The reported metrics say it plainly: 0 erases, 0.0 ms of mount time, 0 tick acknowledge latency,
 across 49 power cuts.
 
-The repair is to compare against the image **frozen at the instant of the cut**, and again before the
-read back that ends a run, rather than against the image as it stands. Power is already gone at that
-point, so nothing written afterwards is durable by definition and nothing written afterwards can
-satisfy the check. Request numbers for the read back now continue the same run of integers the
+The repair is to compare against the image **frozen at the instant of the cut**, and again before
+the read back that ends a run, rather than against the image as it stands. Power is already gone at
+that point, so nothing written afterwards is durable by definition and nothing written afterwards
+can satisfy the check. Request numbers for the read back now continue the same run of integers the
 workload uses, which removes the fingerprint in (2), though with the freeze in place recognising the
 read back buys nothing.
 
@@ -160,7 +160,7 @@ records no rollbacks at all, so its daemon does survive and does answer), but it
 less well timed than the original's, so running it against the old check does not reproduce a clean
 pass. That half of the comparison is therefore not evidence I can show. What is shown instead, and
 what the fix actually rests on, is the mechanism itself:
-`authoring/evidence/check_durability_semantics.py` freezes an image, programs a value afterwards, and
-asserts that the later value is absent from the frozen image, present in the live image, and that the
-two are not the same object. That is the whole of the property, and it is checked without going
-through any solver.
+`authoring/evidence/check_durability_semantics.py` freezes an image, programs a value afterwards,
+and asserts that the later value is absent from the frozen image, present in the live image, and
+that the two are not the same object. That is the whole of the property, and it is checked without
+going through any solver.
