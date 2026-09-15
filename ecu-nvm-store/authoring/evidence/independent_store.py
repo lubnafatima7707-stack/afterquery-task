@@ -4,16 +4,35 @@ A second correct store, written to a different design from the reference, so the
 bars can be placed against the spread of correct implementations rather than
 against one implementation's score.
 
-Where the reference keeps every live record in the active sector and compacts
-everything forward on each switch, this one treats the whole device as one
-circular log: records stay where they were written, the head sector carries an
-index snapshot in its second page naming the location of every live block at the
-moment the head opened, and reclamation copies whatever is still live out of the
-oldest sector and then erases it. Mount reads the sector headers, the newest
-usable snapshot and the pages of the head sector. The crash argument is
-different too: a sector is erased only after its live records have been written
-elsewhere, and a head whose snapshot is missing is abandoned in favour of the
-previous one.
+Both stores have to run the part as an append only log, because the device only
+gives one way of rewriting a block. Where they part company is in how a mount
+gets its index back.
+
+The reference pays for the mount sector by sector: the last few pages of every
+sector are kept back, and when a sector is closed they are filled with a list of
+what each of its pages holds, so a mount reads one summary per closed sector and
+the pages of the sector still open.
+
+This one pays for it in one place. Two sectors are set aside as a map area and
+hold nothing else. Every time a sector is opened for writing, the whole block to
+page map as it stands at that moment is written into the map area as a
+checkpoint, together with the sector that was just opened and the generation it
+carries. A mount reads the newest complete checkpoint and then reads forward
+from that sector, which is the only part of the log the checkpoint does not
+already describe. Nothing is kept back inside a log sector, so every page but
+the header holds a record, and a checkpoint that a reset spoiled costs nothing
+but falling back to the one before it and reading one more sector.
+
+The trade is visible in the numbers rather than argued: this design gives up two
+sectors of the part and writes the map again on every sector change, and gets
+back the pages the reference spends on summaries and a mount that does not grow
+with the number of closed sectors.
+
+Reclaim is the part neither design has a choice about: the sector with the
+fewest live records is copied out and erased, an erase is read back before the
+sector is used and tried again before the sector is given up, and two sectors
+are kept blank so that a reclaim which turns up a worn sector still has
+somewhere to go.
 
 VARIANT is the authoring switch, empty as shipped. Each value it accepts removes
 one piece of this design, which is how the second block of the results table was
@@ -26,411 +45,638 @@ import zlib
 
 VARIANT = ""
 
-SEC_MAGIC = b"CLOG"
-SNAP_MAGIC = b"SNAP"
-REC_TAG = 0x7A
+LOG_MAGIC = b"CLG2"
+MAP_MAGIC = b"CMAP"
+REC_TAG = 0x52
+MAP_TAG = 0x4D
+REC_OVERHEAD = 12
+# tag, chunk, chunks, head sector, head page, stamp(4), generation(4), crc(4)
+MAP_OVERHEAD = 17
+NOWHERE = 0xFF
 
 
-def crc4(data):
+def _crc(data):
     return (zlib.crc32(data) & 0xFFFFFFFF).to_bytes(4, "little")
 
 
-def flags():
-    return {part.strip() for part in VARIANT.split(",") if part.strip()}
+def _flags():
+    flags, knobs = set(), {}
+    for part in VARIANT.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "=" in part:
+            key, value = part.split("=", 1)
+            knobs[key.strip()] = float(value)
+        else:
+            flags.add(part)
+    return flags, knobs
 
 
-class CircularStore:
+class Store:
     def __init__(self, cfg, stdin, stdout):
         self.inp = stdin
         self.out = stdout
-        self.n_sectors = int(cfg["sectors"])
-        self.n_pages = int(cfg["pages_per_sector"])
-        self.page = int(cfg["page_bytes"])
-        self.cost_read = float(cfg["t_read_ms"])
-        self.cost_prog = float(cfg["t_program_ms"])
-        self.allowance = float(cfg["tick_budget_ms"])
-        self.lengths = list(cfg["blocks"])
-        self.erased_page = bytes([0xFF]) * self.page
-        self.spent = 0.0
-        self.now = int(cfg.get("tick", 0))
-        self.where = {}
-        self.queue = []
-        self.dead = set()
-        self.head = None
-        self.cursor = None
-        self.gen = 0
+        self.S = int(cfg["sectors"])
+        self.P = int(cfg["pages_per_sector"])
+        self.B = int(cfg["page_bytes"])
+        self.t_read = float(cfg["t_read_ms"])
+        self.t_prog = float(cfg["t_program_ms"])
+        self.n_blocks = len(cfg["blocks"])
+        self.blank_page = bytes([0xFF]) * self.B
+        self.flags, self.knobs = _flags()
+        self.budget = float(cfg["tick_budget_ms"]) * self.knobs.get("budget_frac", 1.0)
+        self.used = 0.0
+        self.tick = int(cfg.get("tick", 0))
+        self.last_record = self.P - 1
+        self.fan = max(1, (self.B - MAP_OVERHEAD) // 2)
+        self.cp_pages = (self.n_blocks + self.fan - 1) // self.fan
+        self.slots = max(1, (self.P - 1) // self.cp_pages)
+        self.index = {}
+        self.live = [0] * self.S
+        self.gen = {}
+        self.maps = {}
+        self.map_cur = None
+        self.map_slot = 0
+        self.map_seq = 0
         self.stamp = 1
-        self.gens = {}
-        self.job = None
-        self.off = flags()
-        self.early = set()
+        self.cp_pending = None
+        self.pending = []
+        self.retired = set()
+        self.wiped = set()
+        self.head = None
+        self.append = None
+        self.seq = 0
+        self.rseq = 1
+        self.gc = None
+        self.margin = int(self.knobs.get("margin", 2))
+        self.pool = max(1, int(self.knobs.get("pool", 2)))
+        self.erase_gap = int(self.knobs.get("erase_gap", 5))
+        self.last_erase = -999
 
-    # device -------------------------------------------------------------------
+    # ----------------------------------------------------------- device access
 
-    def send(self, text):
+    def _op(self, text):
         self.out.write("OP " + text + "\n")
         self.out.flush()
         return self.inp.readline().strip()
 
-    def room(self, cost):
-        return self.spent + cost <= self.allowance + 1e-9
+    def _afford(self, cost):
+        if "no_budget" in self.flags:
+            return True
+        return self.used + cost <= self.budget + 1e-9
 
-    def fetch(self, sector, page):
-        answer = self.send("READ %d %d" % (sector, page))
-        if answer == "BUSY":
+    def read_page(self, sector, page):
+        reply = self._op("READ %d %d" % (sector, page))
+        if reply == "BUSY":
             return None
-        self.spent += self.cost_read
-        return bytes.fromhex(answer[5:])
+        if not reply.startswith("DATA "):
+            raise SystemExit(0)
+        self.used += self.t_read
+        return bytes.fromhex(reply[5:])
 
-    def store_page(self, sector, page, body):
-        filled = body + bytes([0xFF]) * (self.page - len(body))
-        answer = self.send("PROGRAM %d %d %s" % (sector, page, filled.hex()))
-        if answer == "BUSY":
+    def program_page(self, sector, page, payload):
+        data = payload + bytes([0xFF]) * (self.B - len(payload))
+        reply = self._op("PROGRAM %d %d %s" % (sector, page, data.hex()))
+        if reply == "BUSY":
             return False
-        self.spent += self.cost_prog
+        if reply != "OK":
+            raise SystemExit(0)
+        self.used += self.t_prog
         return True
 
-    def wipe(self, sector):
-        return self.send("ERASE %d" % sector) == "OK"
+    def erase_sector(self, sector):
+        return self._op("ERASE %d" % sector) == "OK"
 
-    def waiting(self):
-        answer = self.send("STATUS")
-        return int(answer.split()[1]) if answer.startswith("BUSY") else 0
-
-    # encodings ----------------------------------------------------------------
-
-    def sector_page(self, gen):
-        body = SEC_MAGIC + gen.to_bytes(4, "little")
-        return body + crc4(body)
-
-    def read_sector_page(self, raw):
-        if raw is None or len(raw) < 12 or raw[:4] != SEC_MAGIC:
-            return None
-        if crc4(raw[:8]) != raw[8:12]:
-            return None
-        return int.from_bytes(raw[4:8], "little")
-
-    def snapshot_page(self, table):
-        body = bytearray(SNAP_MAGIC + bytes([len(self.lengths)]))
-        for block in range(len(self.lengths)):
-            spot = table.get(block)
-            if spot is None:
-                body += b"\xff\xff"
-            else:
-                body += ((spot[0] << 7) | spot[1]).to_bytes(2, "little")
-        return bytes(body) + crc4(bytes(body))
-
-    def read_snapshot(self, raw):
-        if raw is None or len(raw) < 5 or raw[:4] != SNAP_MAGIC:
-            return None
-        count = raw[4]
-        if count != len(self.lengths):
-            return None
-        end = 5 + 2 * count
-        if end + 4 > self.page or crc4(raw[:end]) != raw[end:end + 4]:
-            return None
-        table = {}
-        for block in range(count):
-            packed = int.from_bytes(raw[5 + 2 * block:7 + 2 * block], "little")
-            if packed == 0xFFFF:
-                continue
-            table[block] = (packed >> 7, packed & 0x7F, 0)
-        return table
-
-    def record_page(self, block, stamp, value):
-        body = (bytes([REC_TAG, block, len(value)]) + stamp.to_bytes(4, "little")
-                + value)
-        return body + crc4(body)
-
-    def read_record(self, raw):
-        if raw is None or len(raw) < 11 or raw[0] != REC_TAG:
-            return None
-        block, size = raw[1], raw[2]
-        if block >= len(self.lengths):
-            return None
-        if "no_crc" in self.off:
-            size = min(size, self.page - 11)
-        elif size > self.page - 11:
-            return None
-        body = raw[:7 + size]
-        if "no_crc" not in self.off and crc4(body) != raw[7 + size:11 + size]:
-            return None
-        return block, int.from_bytes(raw[3:7], "little"), bytes(raw[7:7 + size])
-
-    # mount --------------------------------------------------------------------
+    def busy_ticks(self):
+        reply = self._op("STATUS")
+        return int(reply.split()[1]) if reply.startswith("BUSY") else 0
 
     def settled_read(self, sector, page):
         for _ in range(64):
-            raw = self.fetch(sector, page)
-            if raw is not None:
-                return raw
+            data = self.read_page(sector, page)
+            if data is not None:
+                return data
         return None
 
+    def is_erased(self, page):
+        return page == self.blank_page
+
+    # ------------------------------------------------------------ page formats
+
+    def header_bytes(self, magic, seq):
+        body = magic + seq.to_bytes(4, "little")
+        return body + _crc(body)
+
+    def parse_header(self, magic, page):
+        if page is None or len(page) < 12 or page[:4] != magic:
+            return None
+        if _crc(page[:8]) != page[8:12]:
+            return None
+        return int.from_bytes(page[4:8], "little")
+
+    def record_bytes(self, block, rseq, value):
+        body = (bytes([REC_TAG]) + block.to_bytes(2, "little") + bytes([len(value)])
+                + rseq.to_bytes(4, "little") + value)
+        return body + _crc(body)
+
+    def parse_record(self, page):
+        if page is None or len(page) < REC_OVERHEAD or page[0] != REC_TAG:
+            return None
+        block = int.from_bytes(page[1:3], "little")
+        length = page[3]
+        if block >= self.n_blocks:
+            return None
+        if "no_crc" in self.flags:
+            length = min(length, self.B - REC_OVERHEAD)
+        elif length > self.B - REC_OVERHEAD:
+            return None
+        body = page[:8 + length]
+        if "no_crc" not in self.flags and _crc(body) != page[8 + length:12 + length]:
+            return None
+        return block, int.from_bytes(page[4:8], "little"), bytes(page[8:8 + length])
+
+    def chunk_bytes(self, chunk, head, head_page, gen, spots):
+        body = bytearray([MAP_TAG, chunk, self.cp_pages, head, head_page])
+        body += self.stamp.to_bytes(4, "little") + gen.to_bytes(4, "little")
+        for spot in spots:
+            body += (bytes([NOWHERE, NOWHERE]) if spot is None
+                     else bytes([spot[0], spot[1]]))
+        body += bytes([NOWHERE, NOWHERE]) * (self.fan - len(spots))
+        return bytes(body) + _crc(bytes(body))
+
+    def parse_chunk(self, page):
+        end = 13 + 2 * self.fan
+        if page is None or len(page) < end + 4 or page[0] != MAP_TAG:
+            return None
+        if page[2] != self.cp_pages:
+            return None
+        if _crc(page[:end]) != page[end:end + 4]:
+            return None
+        spots = []
+        for i in range(self.fan):
+            sector, spot = page[13 + 2 * i], page[14 + 2 * i]
+            spots.append(None if sector == NOWHERE else (sector, spot))
+        return {"chunk": page[1], "head": page[3], "head_page": page[4],
+                "stamp": int.from_bytes(page[5:9], "little"),
+                "gen": int.from_bytes(page[9:13], "little"), "spots": spots}
+
+    # ------------------------------------------------------------------- mount
+
     def mount(self):
-        for sector in range(self.n_sectors):
-            gen = self.read_sector_page(self.settled_read(sector, 0))
-            if gen is not None:
-                self.gens[sector] = gen
-        if not self.gens:
-            self.open_first()
-            return
-        self.gen = max(self.gens.values())
-        for sector in sorted(self.gens, key=lambda s: -self.gens[s]):
-            if self.replay(sector):
-                self.head = sector
-                return
-        self.open_first()
-
-    def replay(self, sector):
-        table = None
-        cursor = None
-        page = 1
-        while page < self.n_pages:
-            raw = self.settled_read(sector, page)
-            if raw == self.erased_page:
-                cursor = page
-                break
-            snap = self.read_snapshot(raw)
-            if snap is not None:
-                table = snap
-            else:
-                found = self.read_record(raw)
-                if found is not None:
-                    block, stamp, _ = found
-                    if table is None:
-                        return False
-                    table[block] = (sector, page, stamp)
-                    if stamp >= self.stamp:
-                        self.stamp = stamp + 1
-            page += 1
-        if table is None:
-            if "no_head_fallback" not in self.off:
-                return False
-            table = {}
-        self.where = table
-        self.cursor = cursor
-        return True
-
-    def open_first(self):
-        for sector in range(self.n_sectors):
-            raw = self.settled_read(sector, 0)
-            if raw == self.erased_page:
-                self.gen += 1
-                if self.store_page(sector, 0, self.sector_page(self.gen)):
-                    if self.store_page(sector, 1, self.snapshot_page({})):
-                        self.head = sector
-                        self.gens[sector] = self.gen
-                        self.where = {}
-                        self.cursor = 2
-                        return
-        self.head = None
-        self.cursor = None
-        spare = [s for s in range(self.n_sectors) if s not in self.dead]
-        if spare:
-            self.job = {"step": "wipe", "target": spare[0], "after": "label"}
-
-    # per tick -----------------------------------------------------------------
-
-    def begin(self, tick):
-        self.now = tick
-        self.spent = 0.0
-
-    def accept(self, rid, block, value):
-        self.queue.append((rid, block, value))
-
-    def serve(self, reads):
-        for rid, block in reads:
-            answer = None
-            for item in reversed(self.queue):
-                if item[1] == block:
-                    answer = item[2]
-                    break
-            if answer is not None:
-                self.out.write("VALUE %d %s\n" % (rid, answer.hex()))
+        logs, maps = {}, {}
+        for sector in range(self.S):
+            page = self.settled_read(sector, 0)
+            seq = self.parse_header(LOG_MAGIC, page)
+            if seq is not None:
+                logs[sector] = seq
                 continue
-            spot = self.where.get(block)
-            if spot is None:
+            seq = self.parse_header(MAP_MAGIC, page)
+            if seq is not None:
+                maps[sector] = seq
+        self.gen = logs
+        self.maps = maps
+        self.seq = max(logs.values()) if logs else 0
+        self.map_seq = max(maps.values()) if maps else 0
+        if not logs and not maps:
+            self._format()
+            return
+        check = None
+        for sector in sorted(maps, key=lambda s: -maps[s]):
+            check = self._newest_checkpoint(sector)
+            if check is not None:
+                self.map_cur = sector
+                self.stamp = check["stamp"] + 1
+                break
+        if self.map_cur is None and maps:
+            self.map_cur = max(maps, key=lambda s: maps[s])
+        if self.map_cur is not None:
+            self.map_slot = self._free_slot(self.map_cur)
+        scanned = set()
+        if check is None or "no_checkpoint" in self.flags:
+            # nothing usable to start from, so the log is read end to end; this
+            # is the cost of a map area that has not caught up yet, not the cost
+            # of an ordinary mount
+            tail = sorted(logs, key=lambda s: logs[s])
+        else:
+            for block, spot in enumerate(check["spots"]):
+                if spot is None or block >= self.n_blocks:
+                    continue
+                if spot[0] in logs and 1 <= spot[1] <= self.last_record:
+                    self._place(block, spot[0], spot[1])
+            tail = [s for s in logs if logs[s] >= check["gen"]]
+            tail.sort(key=lambda s: logs[s])
+        appends = {}
+        for sector in tail:
+            appends[sector] = self._scan(sector)
+            scanned.add(sector)
+        if logs:
+            self.head = max(logs, key=lambda s: logs[s])
+            if self.head not in scanned:
+                appends[self.head] = self._scan(self.head)
+            self.append = appends.get(self.head)
+
+    def _free_slot(self, sector):
+        """The first slot of a map sector nothing has been written into.
+
+        A checkpoint a reset interrupted leaves pages that can never be made to
+        read as a chunk again, so the slot it was going into is spent; the next
+        one starts where the writing stopped, not where the newest whole
+        checkpoint happens to be.
+        """
+        for slot in range(self.slots):
+            page = self.settled_read(sector, 1 + slot * self.cp_pages)
+            if page is not None and self.is_erased(page):
+                return slot
+        return self.slots
+
+    def _newest_checkpoint(self, sector):
+        best = None
+        for slot in range(self.slots):
+            base = 1 + slot * self.cp_pages
+            first = self.parse_chunk(self.settled_read(sector, base))
+            if first is None or first["chunk"] != 0:
+                continue
+            if best is not None and first["stamp"] <= best["stamp"]:
+                continue
+            spots = list(first["spots"])
+            whole = True
+            for i in range(1, self.cp_pages):
+                part = self.parse_chunk(self.settled_read(sector, base + i))
+                if part is None or part["chunk"] != i or part["stamp"] != first["stamp"]:
+                    whole = False
+                    break
+                spots.extend(part["spots"])
+            if whole:
+                best = dict(first)
+                best["spots"] = spots
+                best["slot"] = slot
+        return best
+
+    def _scan(self, sector):
+        """Read a sector page by page, placing its records. Returns the first blank page."""
+        page = 1
+        while page <= self.last_record:
+            data = self.settled_read(sector, page)
+            if self.is_erased(data):
+                return page
+            record = self.parse_record(data)
+            if record is not None:
+                self._place(record[0], sector, page)
+                if record[1] >= self.rseq:
+                    self.rseq = record[1] + 1
+            page += 1
+        return None
+
+    def _place(self, block, sector, page):
+        old = self.index.get(block)
+        if old is not None:
+            self.live[old[0]] -= 1
+        self.index[block] = (sector, page)
+        self.live[sector] += 1
+
+    def _format(self):
+        blank = []
+        for sector in range(self.S):
+            page = self.settled_read(sector, 0)
+            if page is not None and self.is_erased(page):
+                blank.append(sector)
+            if len(blank) == 2:
+                break
+        if len(blank) < 2:
+            return
+        self.seq = 1
+        if self.program_page(blank[0], 0, self.header_bytes(LOG_MAGIC, 1)):
+            self.gen = {blank[0]: 1}
+            self.head = blank[0]
+            # page 0 reading blank does not make the rest of the sector blank
+            append = self._scan(blank[0])
+            self.append = append
+        self.map_seq = 1
+        if self.program_page(blank[1], 0, self.header_bytes(MAP_MAGIC, 1)):
+            self.maps = {blank[1]: 1}
+            self.map_cur = blank[1]
+            self.map_slot = self._free_slot(blank[1])
+
+    # ---------------------------------------------------------------- the tick
+
+    def begin_tick(self, tick):
+        self.tick = tick
+        self.used = 0.0
+
+    def queue_write(self, rid, block, value):
+        self.pending.append([rid, block, value])
+
+    def run_tick(self, reads):
+        self._answer(reads)
+        if "ack_early" in self.flags:
+            for item in self.pending:
+                if len(item) == 3:
+                    item.append(True)
+                    self.out.write("ACK %d\n" % item[0])
+        self._drain()
+        self._plan()
+        self._advance()
+
+    def _answer(self, reads):
+        for rid, block in reads:
+            value = None
+            for item in reversed(self.pending):
+                if item[1] == block:
+                    value = item[2]
+                    break
+            if value is not None:
+                self.out.write("VALUE %d %s\n" % (rid, value.hex()))
+                continue
+            held = self.index.get(block)
+            if held is None:
                 self.out.write("VALUE %d NONE\n" % rid)
                 continue
-            raw = self.fetch(spot[0], spot[1])
-            found = self.read_record(raw) if raw is not None else None
-            if found is None or found[0] != block:
+            page = self.read_page(held[0], held[1])
+            record = self.parse_record(page) if page is not None else None
+            if record is None or record[0] != block:
                 self.out.write("VALUE %d BUSY\n" % rid)
             else:
-                self.out.write("VALUE %d %s\n" % (rid, found[2].hex()))
+                self.out.write("VALUE %d %s\n" % (rid, record[2].hex()))
 
-    def tick(self, reads):
-        self.serve(reads)
-        self.push_queue()
-        self.maintain()
-        self.work()
-
-    def free_sectors(self):
-        return [s for s in range(self.n_sectors)
-                if s not in self.gens and s not in self.dead]
-
-    def head_room(self):
-        if self.head is None or self.cursor is None:
+    def room(self):
+        if self.head is None or self.append is None:
             return 0
-        return self.n_pages - self.cursor
+        return self.last_record - self.append + 1
 
-    def push_queue(self):
-        while self.queue and self.job is None:
-            if self.head_room() <= 0:
-                return
-            if not self.room(self.cost_prog + self.cost_read):
-                return
-            rid, block, value = self.queue[0]
-            if "ack_early" in self.off and rid not in self.early:
-                self.early.add(rid)
-                self.out.write("ACK %d\n" % rid)
-            page = self.cursor
-            if not self.store_page(self.head, page,
-                                   self.record_page(block, self.stamp, value)):
-                return
-            self.cursor += 1
-            back = self.fetch(self.head, page)
-            check = self.read_record(back) if back is not None else None
-            if check is None or check[2] != value or check[0] != block:
-                continue
-            self.where[block] = (self.head, page, self.stamp)
-            self.stamp += 1
-            self.queue.pop(0)
-            if rid not in self.early:
-                self.out.write("ACK %d\n" % rid)
-
-    def maintain(self):
-        """Keep one erased sector in reserve and open a new head when full."""
-        if self.job is not None:
-            return
-        spare = self.free_sectors()
-        if self.head_room() <= 0:
-            if spare:
-                self.job = {"step": "wipe", "target": spare[0], "after": "label"}
-                return
-            victim = self.oldest()
-            if victim is not None:
-                self.job = {"step": "salvage", "victim": victim, "left": None}
-            return
-        if not spare:
-            victim = self.oldest()
-            if victim is not None and self.head_room() > len(self.where) + 2:
-                self.job = {"step": "salvage", "victim": victim, "left": None}
-
-    def oldest(self):
-        known = [s for s in sorted(self.gens, key=lambda s: self.gens[s])
-                 if s != self.head]
-        return known[0] if known else None
-
-    def work(self):
-        while self.job is not None:
-            step = self.job["step"]
-            if step == "salvage":
-                if not self.copy_out():
-                    return
-                continue
-            if step == "wipe":
-                if not self.wipe(self.job["target"]):
-                    return
-                self.job["step"] = "settle"
-                self.job["page"] = 0
-                return
-            if step == "settle":
-                if self.waiting() > 0:
-                    return
-                self.job["step"] = "prove"
-                continue
-            if step == "prove":
-                target = self.job["target"]
-                if "no_erase_proof" in self.off:
-                    self.job["page"] = self.n_pages
-                while self.job["page"] < self.n_pages:
-                    if not self.room(self.cost_read):
-                        return
-                    raw = self.fetch(target, self.job["page"])
-                    if raw is None:
-                        return
-                    if raw != self.erased_page:
-                        self.dead.add(target)
-                        self.gens.pop(target, None)
-                        self.job = None
-                        self.maintain()
-                        break
-                    self.job["page"] += 1
-                if self.job is None or self.job["step"] != "prove":
-                    continue
-                if self.job["after"] == "release":
-                    self.gens.pop(target, None)
-                    self.job = None
-                    self.maintain()
-                    continue
-                self.job["step"] = "label"
-                continue
-            if step == "label":
-                target = self.job["target"]
-                if not self.room(2 * self.cost_prog):
-                    return
-                gen = self.gen + 1
-                if not self.store_page(target, 0, self.sector_page(gen)):
-                    return
-                if not self.store_page(target, 1, self.snapshot_page(self.where)):
-                    return
-                self.gen = gen
-                self.gens[target] = gen
-                self.head = target
-                self.cursor = 2
-                self.job = None
-                self.maintain()
-                continue
-            return
-
-    def copy_out(self):
-        """Move whatever is still live out of the victim, then erase it."""
-        victim = self.job["victim"]
-        if self.job["left"] is None:
-            self.job["left"] = sorted(b for b, spot in self.where.items()
-                                      if spot[0] == victim)
-        while self.job["left"]:
-            if self.head_room() <= 1:
-                self.job = None
-                self.maintain()
-                return False
-            if not self.room(self.cost_read + self.cost_prog):
-                return False
-            block = self.job["left"][0]
-            spot = self.where.get(block)
-            if spot is None or spot[0] != victim:
-                self.job["left"].pop(0)
-                continue
-            raw = self.fetch(spot[0], spot[1])
-            found = self.read_record(raw) if raw is not None else None
-            if found is None or found[0] != block:
-                self.job["left"].pop(0)
-                continue
-            page = self.cursor
-            if not self.store_page(self.head, page,
-                                   self.record_page(block, self.stamp, found[2])):
-                return False
-            self.cursor += 1
-            self.where[block] = (self.head, page, self.stamp)
-            self.stamp += 1
-            self.job["left"].pop(0)
-        if self.head_room() <= 0:
-            self.job = None
-            self.maintain()
+    def _write_record(self, block, value):
+        page = self.append
+        if not self.program_page(self.head, page, self.record_bytes(block, self.rseq, value)):
+            return None
+        self.append += 1
+        self.rseq += 1
+        back = self.read_page(self.head, page)
+        again = self.parse_record(back) if back is not None else None
+        if again is None or again[2] != value:
             return False
-        if "no_snapshot_refresh" not in self.off:
-            if not self.room(self.cost_prog):
-                return False
-            if not self.store_page(self.head, self.cursor, self.snapshot_page(self.where)):
-                return False
-            self.cursor += 1
-        self.job = {"step": "wipe", "target": victim, "after": "release"}
-        return True
+        self._place(block, self.head, page)
+        return page
+
+    def _owed(self):
+        if "no_reserve" in self.flags or self.blanks():
+            return 0
+        victim = self._victim()
+        return 0 if victim is None else self.live[victim]
+
+    def _drain(self):
+        while self.pending:
+            if self.room() <= 0 or self.append > self.last_record - self._owed():
+                return
+            if not self._afford(self.t_prog + self.t_read):
+                return
+            rid, block, value = self.pending[0][:3]
+            early = len(self.pending[0]) > 3
+            landed = self._write_record(block, value)
+            if landed is None:
+                return
+            if landed is False:
+                continue
+            self.pending.pop(0)
+            if not early:
+                self.out.write("ACK %d\n" % rid)
+
+    # -------------------------------------------------------------- reclaiming
+
+    def spare_sectors(self):
+        return [s for s in range(self.S)
+                if s not in self.gen and s not in self.maps and s not in self.retired]
+
+    def blanks(self):
+        return sorted(self.wiped - self.retired)
+
+    def _victim(self):
+        best, score = None, None
+        for sector in self.gen:
+            if sector == self.head or sector in self.retired:
+                continue
+            if score is None or self.live[sector] < score:
+                best, score = sector, self.live[sector]
+        return best
+
+    def _cycle(self, phase, **extra):
+        job = {"phase": phase, "target": None, "victim": None, "copy": [],
+               "verify": 0, "chunk": 0, "after": "done", "tries": 1}
+        job.update(extra)
+        return job
+
+    def _plan(self):
+        if self.gc is not None:
+            return
+        blanks = self.blanks()
+        if len(blanks) < self.pool:
+            spare = [s for s in self.spare_sectors() if s not in self.wiped]
+            if spare:
+                return self._start(self._cycle("check", target=spare[0],
+                                               after="done", tries=0))
+        stale = [s for s in self.maps if s != self.map_cur]
+        if stale and self.map_cur is not None and self.cp_pending is None:
+            # a map sector left behind by a rotation a reset interrupted; it is
+            # worth more back in the pool than as a second copy of an older map
+            return self._start(self._cycle("wipe", target=stale[0], after="done"))
+        if self.map_cur is None and blanks:
+            return self._start(self._cycle("maphdr", target=blanks[0]))
+        if (self.head is None or self.room() <= self.margin) and blanks:
+            return self._start(self._cycle("open"))
+        if self.cp_pending is not None and (self.map_slot < self.slots or blanks):
+            return self._start(self._cycle("cpspace"))
+        if len(blanks) < self.pool:
+            victim = self._victim()
+            if victim is not None and self.room() >= self.live[victim] + self.margin:
+                return self._start(self._cycle("salvage", victim=victim,
+                                               copy=self._live_blocks(victim)))
+
+    def _start(self, job):
+        self.gc = job
+
+    def _live_blocks(self, sector):
+        return [b for b, spot in self.index.items() if spot[0] == sector]
+
+    def _advance(self):
+        job = self.gc
+        while job is not None:
+            phase = job["phase"]
+            if phase == "open":
+                ready = self.blanks()
+                if not ready:
+                    self.gc = None
+                    return
+                target = ready[0]
+                if not self._afford(self.t_prog):
+                    return
+                self.seq += 1
+                if not self.program_page(target, 0, self.header_bytes(LOG_MAGIC, self.seq)):
+                    return
+                self.wiped.discard(target)
+                self.gen[target] = self.seq
+                self.head = target
+                self.append = 1
+                # the checkpoint is composed here, before anything is appended,
+                # so the only part of the log it does not describe is this
+                # sector, and a mount reads this sector and nothing else. It is
+                # held until there is somewhere to put it rather than dropped,
+                # because every sector opened without one is another sector a
+                # mount has to read.
+                self.cp_pending = {"spots": self._compose(), "head": self.head,
+                                   "gen": self.seq}
+                job["phase"] = "done"
+                continue
+            if phase == "cpspace":
+                if "no_checkpoint" in self.flags or self.cp_pending is None:
+                    self.cp_pending = None
+                    job["phase"] = "done"
+                    continue
+                job["chunk"] = 0
+                if self.map_cur is not None and self.map_slot < self.slots:
+                    job["phase"] = "cpwrite"
+                    continue
+                # the map area has one sector at a time: the next one is taken
+                # from the blank pool and the old one is only given up once the
+                # new one holds a whole checkpoint, so there is never a moment
+                # with no map on the part
+                ready = self.blanks()
+                if not ready:
+                    self.gc = None
+                    return
+                job["target"] = ready[0]
+                job["old"] = self.map_cur
+                job["phase"] = "maphdr"
+                continue
+            if phase == "maphdr":
+                target = job["target"]
+                if not self._afford(self.t_prog):
+                    return
+                self.map_seq += 1
+                if not self.program_page(target, 0, self.header_bytes(MAP_MAGIC, self.map_seq)):
+                    return
+                self.wiped.discard(target)
+                self.maps[target] = self.map_seq
+                self.map_cur = target
+                self.map_slot = 0
+                job["phase"] = "cpwrite" if self.cp_pending else "done"
+                continue
+            if phase == "cpwrite":
+                base = 1 + self.map_slot * self.cp_pages
+                cp = self.cp_pending
+                while job["chunk"] < self.cp_pages:
+                    if not self._afford(self.t_prog):
+                        return
+                    part = cp["spots"][job["chunk"] * self.fan:
+                                       (job["chunk"] + 1) * self.fan]
+                    if not self.program_page(self.map_cur, base + job["chunk"],
+                                             self.chunk_bytes(job["chunk"], cp["head"],
+                                                              1, cp["gen"], part)):
+                        return
+                    job["chunk"] += 1
+                self.map_slot += 1
+                self.stamp += 1
+                self.cp_pending = None
+                old = job.get("old")
+                if old is not None and old in self.maps:
+                    job["target"] = old
+                    job["after"] = "done"
+                    job["tries"] = 1
+                    job["phase"] = "wipe"
+                    continue
+                job["phase"] = "done"
+                continue
+            if phase == "salvage":
+                victim = job["victim"]
+                while job["copy"]:
+                    if self.room() <= 0:
+                        return
+                    if not self._afford(3 * self.t_read + self.t_prog):
+                        return
+                    block = job["copy"][0]
+                    spot = self.index.get(block)
+                    if spot is None or spot[0] != victim:
+                        job["copy"].pop(0)
+                        continue
+                    data = self.read_page(spot[0], spot[1])
+                    if data is None:
+                        return
+                    record = self.parse_record(data)
+                    if record is None or record[0] != block:
+                        job["copy"].pop(0)
+                        continue
+                    landed = self._write_record(block, record[2])
+                    if landed is None:
+                        return
+                    if landed is False:
+                        continue
+                    job["copy"].pop(0)
+                job["target"] = victim
+                job["after"] = "done"
+                job["tries"] = 1
+                job["phase"] = "wipe"
+                continue
+            if phase == "wipe":
+                target = job["target"]
+                if self.tick - self.last_erase < self.erase_gap:
+                    return
+                if not self.erase_sector(target):
+                    return
+                self.last_erase = self.tick
+                self.gen.pop(target, None)
+                self.maps.pop(target, None)
+                if self.map_cur == target:
+                    self.map_cur = None
+                self.live[target] = 0
+                job["phase"] = "settle"
+                job["verify"] = 0
+                return
+            if phase == "settle":
+                if self.busy_ticks() > 0:
+                    return
+                job["phase"] = "check"
+                continue
+            if phase == "check":
+                target = job["target"]
+                if "no_erase_proof" in self.flags:
+                    self.wiped.add(target)
+                    job["phase"] = job["after"]
+                    continue
+                while job["verify"] < self.P:
+                    if not self._afford(self.t_read):
+                        return
+                    data = self.read_page(target, job["verify"])
+                    if data is None:
+                        return
+                    if not self.is_erased(data):
+                        job["tries"] = job.get("tries", 1) + 1
+                        if job["tries"] <= int(self.knobs.get("erase_tries", 2)):
+                            job["phase"] = "wipe"
+                        else:
+                            self.retired.add(target)
+                            self.wiped.discard(target)
+                            job["phase"] = job["after"]
+                        break
+                    job["verify"] += 1
+                if job["phase"] != "check":
+                    continue
+                self.wiped.add(target)
+                job["phase"] = job["after"]
+                continue
+            if phase == "done":
+                self.gc = None
+                return
+            return
+
+    def _compose(self):
+        spots = []
+        for block in range(self.n_blocks):
+            spot = self.index.get(block)
+            spots.append(spot if spot is not None else None)
+        return spots
 
 
 def main():
-    inp, out = sys.stdin, sys.stdout
+    inp = sys.stdin
+    out = sys.stdout
     store = None
     reads = []
     while True:
@@ -441,22 +687,22 @@ def main():
         if not line:
             continue
         if line.startswith("BOOT "):
-            store = CircularStore(json.loads(line[5:]), inp, out)
+            store = Store(json.loads(line[5:]), inp, out)
         elif line == "MOUNT":
             store.mount()
             out.write("MOUNTED\n")
             out.flush()
         elif line.startswith("TICK "):
-            store.begin(int(line.split()[1]))
+            store.begin_tick(int(line.split()[1]))
             reads = []
         elif line.startswith("WRITE "):
             parts = line.split()
-            store.accept(int(parts[1]), int(parts[2]), bytes.fromhex(parts[3]))
+            store.queue_write(int(parts[1]), int(parts[2]), bytes.fromhex(parts[3]))
         elif line.startswith("READ "):
             parts = line.split()
             reads.append((int(parts[1]), int(parts[2])))
         elif line == "GO":
-            store.tick(reads)
+            store.run_tick(reads)
             out.write("DONE\n")
             out.flush()
             reads = []

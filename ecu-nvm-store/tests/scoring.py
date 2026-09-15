@@ -11,7 +11,7 @@ BARS = {
     "tick_overruns": 0,
     "max_ack_latency_ticks": 35,
     "unacked_at_end": 0,
-    "erases_per_100_writes": 6.0,
+    "erases_per_100_writes": 5.0,
 }
 
 

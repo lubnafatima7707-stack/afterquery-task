@@ -27,32 +27,60 @@ EVIDENCE = os.path.join(ROOT, "authoring", "evidence")
 ABLATIONS = [
     ("no_record_checksum", "no_crc",
      "a page is taken as a record on its tag alone, so a half programmed page is believed"),
-    ("no_seal", "no_seal",
-     "the sector with the highest generation wins even when its copy never finished"),
+    ("no_sector_summary", "no_summary",
+     "the mount rebuilds its index by reading every page of every sector"),
     ("no_erase_verify", "no_erase_verify",
      "the erase is trusted instead of read back, so a worn sector is used anyway"),
+    ("mount_in_sector_order", "no_gen_order",
+     "the mount applies sectors in sector order, so an older record can land on top of a newer one"),
     ("no_tick_budget", "no_budget",
      "all outstanding work is done in the tick it arrives in"),
-    ("mount_full_scan", "full_scan",
-     "the mount rebuilds its index from every page of every sector"),
     ("ack_on_arrival", "ack_early",
      "a write is acknowledged when it is queued rather than when its page is programmed"),
-    ("compact_too_early", "margin=30",
-     "compaction starts while thirty pages of the active sector are still free"),
+    ("one_blank_sector", "pool=1",
+     "one sector is kept blank rather than two, so a reclaim that finds a worn sector has nowhere to go"),
+    ("one_erase_attempt", "erase_tries=0",
+     "a sector that reads back written after one erase is given up on, worn or merely half wiped"),
+    ("fullest_sector_reclaimed", "worst_victim",
+     "the sector with the most live records is reclaimed rather than the one with the fewest"),
+    ("compact_at_thirty", "margin=30",
+     "the open sector is closed while thirty of its pages are still free"),
+    ("compact_at_twenty", "margin=20",
+     "the open sector is closed while twenty of its pages are still free"),
+    ("six_blank_sectors", "pool=6",
+     "six sectors are held blank, which is six sectors of live set the rest of the part has to carry"),
     ("one_write_per_8_ticks", "drip=8",
      "at most one record is programmed every eight ticks"),
-    ("one_write_per_2_ticks", "drip=2",
-     "at most one record is programmed every other tick"),
-    ("deferred_full_scan", "lazy_scan",
-     "nothing is spent at MOUNT and the whole part is scanned from inside the ticks instead, reads answered BUSY until it is done"),
+    ("compact_at_ten", "margin=10",
+     "the open sector is closed while ten of its pages are still free"),
 ]
 
+# Pieces of the reference that argue for themselves but that the graded set does
+# not separately punish the removal of. They are listed rather than quietly left
+# out: a piece claimed as load bearing and measured as decoration is worse than
+# one reported as what it is.
+GUARDS = [
+    ("no_reclaim_reserve", "no_reserve",
+     "writes are not held back from the end of the open sector for the reclaim that is due"),
+    ("no_erase_gap", "no_erase_gap",
+     "an erase may start in the tick after one finished"),
+    ("no_copy_read_back", "no_copy_check",
+     "a reclaim copy is not read back before the sector it came from is erased"),
+]
+
+# Changes to the reference's own constants and to choices a second author could
+# reasonably have made differently. All of these are expected to pass: a bar
+# that only the shipped tuning clears is a bar on the tuning, not on the design.
 PERTURBATIONS = [
-    ("margin_2", "margin=2"),
     ("margin_4", "margin=4"),
-    ("margin_10", "margin=10"),
+    ("pool_3", "pool=3"),
+    ("pool_5", "pool=5"),
+    ("erase_gap_2", "erase_gap=2"),
+    ("erase_gap_9", "erase_gap=9"),
     ("budget_60pc", "budget_frac=0.6"),
     ("budget_80pc", "budget_frac=0.8"),
+    ("one_write_per_2_ticks", "drip=2"),
+    ("oldest_sector_reclaimed", "round_robin"),
 ]
 
 INDEPENDENT = os.path.join(EVIDENCE, "independent_store.py")
@@ -62,19 +90,19 @@ INDEPENDENT = os.path.join(EVIDENCE, "independent_store.py")
 INDEPENDENT_ABLATIONS = [
     ("ind_no_record_checksum", "no_crc",
      "records believed on their tag alone"),
-    ("ind_no_snapshot_refresh", "no_snapshot_refresh",
-     "the victim is erased without a fresh index snapshot, so a stored snapshot can name a reclaimed page"),
+    ("ind_no_checkpoint", "no_checkpoint",
+     "no map is written, so a mount has to read the whole log back"),
     ("ind_no_erase_proof", "no_erase_proof",
      "the erase is not read back, so a worn sector is taken into use"),
-    ("ind_no_head_fallback", "no_head_fallback",
-     "the newest generation is taken as the head even when its snapshot never landed"),
     ("ind_ack_on_arrival", "ack_early",
      "a write is acknowledged when it reaches the queue"),
+    ("ind_one_blank_sector", "pool=1",
+     "one sector kept blank rather than two"),
 ]
 
 OTHERS = [
-    ("independent_circular_log", os.path.join(EVIDENCE, "independent_store.py"),
-     "correct", "second correct design: circular log, index snapshots, oldest sector reclaimed"),
+    ("independent_checkpoint_map", os.path.join(EVIDENCE, "independent_store.py"),
+     "correct", "second correct design: one rotating map sector carrying whole index checkpoints, and a mount that reads the newest checkpoint and one sector of log"),
     ("shortcut_ram_mirror", os.path.join(EVIDENCE, "shortcut_store.py"),
      "shortcut", "quick attempt: memory mirror, ack on arrival, sector dump on fill"),
     ("baseline_skeleton", os.path.join(ROOT, "environment", "tools", "skeleton_store.py"),
@@ -143,6 +171,9 @@ def main():
                          run(variant_file(tmp, name, value), cases)))
         for name, value in PERTURBATIONS:
             rows.append((name, "perturbation", "reference with " + value,
+                         run(variant_file(tmp, name, value), cases)))
+        for name, value, note in GUARDS:
+            rows.append((name, "guard", note,
                          run(variant_file(tmp, name, value), cases)))
         for name, value, note in INDEPENDENT_ABLATIONS:
             rows.append((name, "independent ablation", note,

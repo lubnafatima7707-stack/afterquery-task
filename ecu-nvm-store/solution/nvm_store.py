@@ -487,6 +487,12 @@ class Store:
                 if best is None or self.gen[sector] < self.gen[best]:
                     best = sector
                 continue
+            if "worst_victim" in self.flags:
+                if score is None or self.live[sector] > score:
+                    best, score = sector, self.live[sector]
+                continue
+            # the sector with the fewest live records: what a reclaim costs is
+            # the copying, and what it buys is the pages it frees
             if score is None or self.live[sector] < score:
                 best, score = sector, self.live[sector]
         return best

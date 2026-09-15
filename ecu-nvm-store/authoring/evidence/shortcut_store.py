@@ -47,15 +47,16 @@ class QuickStore:
         return self.op("PROGRAM %d %d %s" % (sector, page, data.hex())) == "OK"
 
     def pack(self, block, value):
-        return bytes([TAG, block, len(value)]) + value
+        return bytes([TAG]) + block.to_bytes(2, "little") + bytes([len(value)]) + value
 
     def unpack(self, raw):
         if raw is None or raw == self.blank or raw[0] != TAG:
             return None
-        block, size = raw[1], raw[2]
+        block = int.from_bytes(raw[1:3], "little")
+        size = raw[3]
         if block >= len(self.lengths):
             return None
-        return block, bytes(raw[3:3 + size])
+        return block, bytes(raw[4:4 + size])
 
     def mount(self):
         best = None
