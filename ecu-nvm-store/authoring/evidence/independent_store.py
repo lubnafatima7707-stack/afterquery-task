@@ -110,7 +110,7 @@ class Store:
         self.rseq = 1
         self.gc = None
         self.margin = int(self.knobs.get("margin", 2))
-        self.pool = max(1, int(self.knobs.get("pool", 2)))
+        self.pool = max(1, int(self.knobs.get("pool", 3)))
         self.erase_gap = int(self.knobs.get("erase_gap", 5))
         self.last_erase = -999
 

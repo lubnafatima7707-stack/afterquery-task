@@ -46,7 +46,7 @@
   },
   "cheat_run_lock_journal": {
     "by_kind": {
-      "corrupt": 0,
+      "corrupt": 960,
       "not_on_device": 10378,
       "rollback": 0,
       "stale": 0,
@@ -55,7 +55,7 @@
     "failed_bars": [
       "integrity_violations"
     ],
-    "integrity_violations": 10378,
+    "integrity_violations": 11338,
     "not_on_device": 10378,
     "scenarios_finished": 10
   },

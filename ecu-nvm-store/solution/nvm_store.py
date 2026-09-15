@@ -110,7 +110,7 @@ class Store:
         # part has been readable again for a moment.
         self.erase_gap = int(self.knobs.get("erase_gap", 5))
         # how many sectors are kept blank; see _need_gc for why one is not enough
-        self.pool = max(1, int(self.knobs.get("pool", 2)))
+        self.pool = max(1, int(self.knobs.get("pool", 3)))
         self.last_erase = -999
         self.last_program_tick = -999
 
@@ -417,13 +417,20 @@ class Store:
     def _need_gc(self):
         """Decide what the part owes itself next.
 
-        Two sectors are kept blank rather than one. A sector is given up only
-        after an erase of it reads back written twice, and that is found out at
-        the end of a reclaim, when its live records have already been copied
-        into the open sector and there is no longer room there to reclaim a
-        second one. The spare blank sector is what the part rolls onto in that
-        case, and a pool of one leaves it with a full sector, nothing blank, and
-        no way to make anything blank.
+        Three sectors are kept blank rather than one, and the reason is worth
+        stating because it is where a log across a part this full deadlocks.
+
+        Once nothing on the part is free, opening a sector spends a blank one
+        and reclaiming a sector makes one, so the count only moves when a
+        reclaim comes back empty handed. That happens when the sector it just
+        erased reads back written twice and is given up, and by then its live
+        records are already copied into the open sector, which no longer has
+        room to reclaim a second one; the part is left one blank sector poorer
+        for good. One kept blank ends the run on the first worn sector. Two gets
+        through these parts as they stand but leaves nothing in hand: close the
+        open sector six pages early rather than two and the same two worn
+        sectors end it. Three is what makes the design stand up to the wear
+        these parts have rather than only just survive it.
         """
         if self.gc is not None:
             return

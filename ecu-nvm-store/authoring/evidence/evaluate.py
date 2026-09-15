@@ -38,7 +38,7 @@ ABLATIONS = [
     ("ack_on_arrival", "ack_early",
      "a write is acknowledged when it is queued rather than when its page is programmed"),
     ("one_blank_sector", "pool=1",
-     "one sector is kept blank rather than two, so a reclaim that finds a worn sector has nowhere to go"),
+     "one sector is kept blank rather than three, so the first worn sector leaves the part with nothing to roll onto"),
     ("one_erase_attempt", "erase_tries=0",
      "a sector that reads back written after one erase is given up on, worn or merely half wiped"),
     ("fullest_sector_reclaimed", "worst_victim",
@@ -51,8 +51,6 @@ ABLATIONS = [
      "six sectors are held blank, which is six sectors of live set the rest of the part has to carry"),
     ("one_write_per_8_ticks", "drip=8",
      "at most one record is programmed every eight ticks"),
-    ("compact_at_ten", "margin=10",
-     "the open sector is closed while ten of its pages are still free"),
 ]
 
 # Pieces of the reference that argue for themselves but that the graded set does
@@ -73,7 +71,11 @@ GUARDS = [
 # that only the shipped tuning clears is a bar on the tuning, not on the design.
 PERTURBATIONS = [
     ("margin_4", "margin=4"),
-    ("pool_3", "pool=3"),
+    ("margin_6", "margin=6"),
+    ("margin_8", "margin=8"),
+    ("margin_10", "margin=10"),
+    ("pool_2", "pool=2"),
+    ("pool_4", "pool=4"),
     ("pool_5", "pool=5"),
     ("erase_gap_2", "erase_gap=2"),
     ("erase_gap_9", "erase_gap=9"),

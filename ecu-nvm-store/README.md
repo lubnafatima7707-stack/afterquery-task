@@ -16,21 +16,19 @@ right at once, four of them pulling against each other.
 
 The first is what a record has to carry to be believed after a reset. A program interrupted part way
 leaves a prefix of the page written and the rest erased, so a page can hold something that looks
-like a record and is not one. Taking a page as a record on its tag alone gives 3 corrupt reads and
-then an outright crash on a second scenario, because the length read out of a half written page is
+like a record and is not one. Taking a page as a record on its tag alone gives a corrupt read and then an outright crash on a second scenario, because the length read out of a half written page is
 not a length.
 
 The second is what orders two copies of a block. A block is rewritten by appending its new version
 somewhere else, so the part carries several versions of most blocks and a mount has to know which
 one is current without reading everything. That means a generation number on each sector, applied in
 order, and a per sector record of what each of its pages holds so the closed sectors do not have to
-be read page by page. Applying the sectors in sector order rather than generation order costs 1000
-violations against a bar of zero, 870 of them a block coming back as a version it had thousands of
-writes ago.
+be read page by page. Applying the sectors in sector order rather than generation order costs 934 violations against a bar of zero, 805 of them a block coming back as a version it had
+thousands of writes ago.
 
 The third is that an erase is a request, not a fact. On some parts a sector starts keeping a few of
 its pages from its second erase onwards while still reporting the erase as finished, so a sector has
-to be read back before it is trusted. Trusting it costs 99 violations and stalls 965 writes. The
+to be read back before it is trusted. Trusting it costs 130 violations and stalls 965 writes. The
 opposite mistake costs as much: a reset in the middle of an erase leaves a sector half wiped and
 reading exactly like a worn one, so a store that gives a sector up the first time it reads back
 written throws away sectors it needs, and 461 writes are never acknowledged.
@@ -38,25 +36,27 @@ written throws away sectors it needs, and 461 writes are never acknowledged.
 The fourth is that an acknowledgement is a promise about the part and not about memory. Holding
 everything in memory and acknowledging on arrival passes every measure until the supply goes, at
 which point it loses 9207 blocks; acknowledging when the write is queued rather than when its page
-is programmed costs 6 violations.
+is programmed costs 4 violations.
 
 The fifth is the budgets, which is where both directions are punished. The store may spend 2.0 ms of
 device time per tick, about five page programs, and an erase takes the device away for three or four
-ticks. Doing all outstanding work in the tick it arrives in overruns 1763 times. Doing too little is
+ticks. Doing all outstanding work in the tick it arrives in overruns 1963 times. Doing too little is
 punished from the other end: every write has to be acknowledged within 35 ticks, and a store that
-programs one record every eight ticks is at 2942 with 2858 writes never acknowledged. The mount is
+programs one record every eight ticks is at 2942 with 2845 writes never acknowledged. The mount is
 bounded at 8.0 ms of device time, which is what the per sector summaries are for; rebuilding the
-index from every page of every sector takes 27.875 ms. And endurance is measured rather than
-assumed, at 5.0 erases per 100 acknowledged writes: with the part this full, a reclaim
-started while twenty pages of the open sector are still free reaches 8.082, and holding six sectors
-blank instead of two reaches 6.267 while failing nothing else.
+index from every page of every sector takes 26.400 ms. And endurance is measured rather than
+assumed, at 5.0 erases per 100 acknowledged writes: with the part this full, a reclaim started while twenty
+pages of the open sector are still free reaches 13.475, and holding six sectors blank instead of
+three reaches 6.267, each of them failing nothing else.
 
 Getting a store that merely works is not the end of it either. A log across a full part deadlocks in
 ways a log across an empty one does not: a sector cannot be given up until its live records are
-copied somewhere, the somewhere has to be blank, and a blank sector is made by giving one up. The
-reference keeps two sectors blank rather than one and holds pages back at the end of the open sector
-for the copies that are due, and the variant with one blank sector passes every other bar and
-strands 461 writes.
+copied somewhere, the somewhere has to be blank, and a blank sector is made by giving one up. Worse, the count of blank sectors only ever falls: once nothing is free, opening one spends a blank
+sector and reclaiming one makes a blank sector, so the two cancel, and a reclaim whose sector turns
+out to be worn leaves the part one blank poorer for good. These parts wear out up to two sectors, so
+the reference keeps three blank. The variant with one passes every other bar and strands 461 writes,
+and the variant with two passes as the part stands but has nothing in hand: close the open sector
+six pages early instead of two and the same two worn sectors end the run.
 
 The data is synthetic and this is disclosed. A seeded generator
 (`authoring/provenance/generate_scenarios.py`) writes the workload and the reset points before any
@@ -90,10 +90,10 @@ the one holding the fewest live records, so a sector whose blocks have mostly be
 almost no copying. Copies are ordinary appends, so a reset in the middle of one leaves both the old
 record and the partial copy and the newer generation wins; the victim is erased only once its last
 live record is out of it, and the erase is read back page by page before the sector is used again
-and retried once before the sector is given up. Two sectors are kept blank, because a sector is only
+and retried once before the sector is given up. Three sectors are kept blank, because a sector is only
 given up after a second erase of it reads back written, and by then its live records are already in
-the open sector and there is no room there to reclaim another one; the spare blank sector is what
-the part rolls onto in that case. Writes stop short of the end of the open sector by what the next
+the open sector with no room there to reclaim another one, so that reclaim comes back empty handed
+and the pool is one poorer for good; these parts wear out up to two sectors. Writes stop short of the end of the open sector by what the next
 reclaim will need, but only while nothing is blank. Work is metered against the tick budget with
 reads answered first, so a read is never held up behind a reclaim, and the erase verify is split
 across ticks.
@@ -156,27 +156,28 @@ records permission denied on every path and then fails on its own merits.
 Five bars, measured over the ten scenarios together, all from `tests/scoring.py`: zero integrity
 violations, no mount above 8.0 ms of device time, no tick over its 2.0 ms budget, every write
 acknowledged within 35 ticks with none outstanding at the end, and at most 5.0 erases per 100
-acknowledged writes. The reference scores 0, 2.380 ms, 0, 4 ticks and 2.384. A second correct store
+acknowledged writes. The reference scores 0, 2.540 ms, 0, 4 ticks and 2.686. A second correct store
 written to a different design, a single map sector rotated through the blank pool carrying a whole
 index checkpoint written each time a log sector is opened, with no summary kept inside a log sector
 and a mount that reads the newest checkpoint and the one sector of log it does not describe, scores
-0, 4.020 ms, 0, 7 ticks and 3.110. Nine perturbations of the reference's own constants and of
+0, 3.600 ms, 0, 5 ticks and 3.594. Thirteen perturbations of the reference's own constants and of
 choices a second author could reasonably have made differently all pass, the worst at 35 ticks and
-3.872 erases per 100 writes, so the pass does not depend on one exact tuning, and each bar sits
+3.991 erases per 100 writes, so the pass does not depend on one exact tuning, and each bar sits
 between the weaker of the two correct stores and the nearest variant that fails.
 
 Each of the five bars is the sole reason some variant fails. Dropping the record checksum, applying
-the sectors at mount in sector order, or acknowledging on arrival fails integrity alone, at 3
-violations plus a crash, 1000 and 6. Dropping the per sector summaries fails the mount bar alone at
-27.875 ms. Doing every job in the tick it arrives in fails the tick budget alone at 1763 overruns.
-Keeping one blank sector rather than two, or giving a sector up after a single erase, fails the
-acknowledgement bar alone at 461 writes stranded. Holding six sectors blank fails the endurance bar
-alone at 6.267. The same ablation test was run on the independently written store rather than only
+the sectors at mount in sector order, or acknowledging on arrival fails integrity alone, at 1
+violation plus a crash, 934 and 4. Dropping the per sector summaries fails the mount bar alone at
+26.400 ms. Doing every job in the tick it arrives in fails the tick budget alone at 1963 overruns.
+Keeping one blank sector rather than three, giving a sector up after a single erase, or reclaiming
+the fullest sector rather than the emptiest, fails the acknowledgement bar alone, at 461, 461 and
+4043 writes stranded. Closing the open sector twenty pages early, or holding six sectors blank,
+fails the endurance bar alone at 13.475 and 6.267. The same ablation test was run on the independently written store rather than only
 on the reference, because a reviewer of an earlier task of mine switched a piece off inside a
 shipped solver and watched it pass: all five of its pieces bite, at 3 violations plus a crash for
-the record checksum, 26.625 ms of mount for the checkpoint, 70 violations with 504 writes stranded
-for the erase proof, 4 violations for acknowledging on arrival, and 1 violation with 1106 writes
-stranded for keeping one blank sector rather than two.
+the record checksum, 25.400 ms of mount for the checkpoint, 162 violations with 461 writes stranded
+for the erase proof, 1 violation for acknowledging on arrival, and 1 violation with 1106 writes
+stranded for keeping one blank sector rather than three.
 
 Three switches are reported as guards rather than claimed as ablations. Holding pages back at the
 end of the open sector for a reclaim that is due, leaving a gap between erases so a read is not
