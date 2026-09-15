@@ -229,7 +229,13 @@ class Store:
             return
         self.gen = headers
         self.seq = max(headers.values())
-        order = sorted(headers, key=lambda s: headers[s])
+        if "no_gen_order" in self.flags:
+            order = sorted(headers)
+        else:
+            # the newer generation of a block has to be applied after the older
+            # one, and the generation on the header is the only thing that says
+            # which sector that is
+            order = sorted(headers, key=lambda s: headers[s])
         head = order[-1]
         for sector in order:
             if sector == head:
@@ -578,7 +584,7 @@ class Store:
                 while gc["copy"]:
                     if self.append is None or self.append > self.last_record:
                         return
-                    if not self._afford(2 * self.t_read + self.t_prog):
+                    if not self._afford(3 * self.t_read + self.t_prog):
                         return
                     block = gc["copy"][0]
                     spot = self.index.get(block)
@@ -598,6 +604,13 @@ class Store:
                         return
                     self.append += 1
                     self.rseq += 1
+                    if "no_copy_check" not in self.flags:
+                        # the record this came from is about to be erased, so a
+                        # copy that did not land is the last copy of the block
+                        back = self.read_page(self.head, page)
+                        again = self.parse_record(back) if back is not None else None
+                        if again is None or again[2] != record[2]:
+                            continue
                     self._place(block, self.head, page)
                     gc["copy"].pop(0)
                 gc["phase"] = "erase"
