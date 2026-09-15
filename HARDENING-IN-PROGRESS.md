@@ -1,50 +1,59 @@
 # State of ecu-nvm-store
 
-## What is in the zip now
+The hardening the easiness screen asked for is finished and is in the zip.
 
-`ecu-nvm-store.zip` is the bundle validated at commit `5ca972b`, restored, plus
-three changes taken from `ddma-radar-targets`, the task that came closest to
-acceptance. Checked from the extracted zip through the real `tests/test.sh`:
-oracle 1 on three consecutive runs with the report written each time, nop 0, the
-independent store 1, and every cheat probe 0.
+## What changed
 
-The three changes:
+The live set went from 24 blocks, which fitted in one sector, to between 490 and
+700 blocks filling about half of every page on each part, and close to three
+fifths of what a log can put records in. That is what the screen was
+really measuring: with everything in one sector the task is a careful append log
+and three agents out of three wrote one in under twenty minutes. With the part
+this full the store has to run the whole part as a log and reclaim
+sectors out of it while the supply is being taken away, which is a different
+problem and deadlocks in ways the small one cannot.
 
-1. `tests/test.sh` runs `python -m pytest -q -p no:cacheprovider` instead of a
-   bare `pytest`. A `pytest` on the path that is not the one carrying
-   `pytest-json-ctrf` rejects `--ctrf` and exits in well under a second, which is
-   a reward of 0 with a verifier time of zero and no test ever running. That is
-   the shape the reference verification stage reported. `no:cacheprovider` also
-   keeps pytest from writing a cache into `/tests`, which is sealed.
-2. Both Dockerfiles create the unprivileged account with
-   `id -u runner || useradd ...`, so the build cannot fail on an image that
-   already has it. The agent image needs the account because the driver shipped
-   under `/app/tools` drops to it.
-3. `[verifier.environment]` carries only `network_mode`, as the documented
-   template and `ddma` do.
+The reference is rewritten to match: a header with a generation on page 0 of each
+sector, records appended one to a page, a summary in the last pages of a sector
+written when it is closed so the mount does not read every page of every sector,
+a reclaim that takes the sector with the fewest live records, an erase that is
+read back before the sector is trusted and tried twice before it is given up, and
+two sectors kept blank so a reclaim that turns up a worn sector still has
+somewhere to go.
 
-## What is not in the zip
+The independent store is rewritten to a design that scales differently: no
+summary inside a log sector at all, and instead one map sector rotated through
+the blank pool carrying a whole index checkpoint written each time a log sector
+is opened.
 
-The work to make the task harder. The easiness screen solved it three times out
-of three in 12 to 17 minutes with every bar cleared by a factor of three or more,
-so the live set was being scaled from 24 blocks to about seven tenths of each
-part, with the reference rewritten as a segment summary log. That work is
-committed at `a4063ba` and is **not finished**: its reference records 67 integrity
-violations over the ten graded scenarios, which is why reference verification
-failed on it.
+## Where it stands
 
-Resume it with
+From the rebuilt zip, through the real `tests/test.sh` in the container layout:
+reward 1 with `6 passed in 19.70s`, reward 0 with the artifact removed, and three
+consecutive verifier runs over the reference giving identical numbers.
 
-    git checkout a4063ba -- ecu-nvm-store/
+| | integrity | mount ms | overruns | ack ticks | unacked | erases/100 |
+|---|---|---|---|---|---|---|
+| bars | 0 | 8.0 | 0 | 35 | 0 | 5.0 |
+| reference | 0 | 2.380 | 0 | 4 | 0 | 2.384 |
+| independent store | 0 | 4.020 | 0 | 7 | 0 | 3.110 |
 
-and the remaining work is: fix the stale and unanswered reads, keep copied cold
-data and freshly written hot data in separate open sectors so that choosing the
-sector with the fewest live records actually beats taking them in rotation (5.77
-against 4.54 erases per 100 writes when they share one, which is no separation at
-all), rewrite the independent store at the new scale, rebuild every ablation,
-recalibrate the five bars, and redo the documents.
+Fourteen ablations fail, nine perturbations pass, and every one of the five bars
+is the sole reason some variant fails. Three switches are reported as guards
+rather than claimed as ablations because removing them changes no number on the
+graded set. `ecu-nvm-store/authoring/evidence/results.md` has the whole table and
+`validation.md` says what was run.
 
-## The open question
+## Two things that did not work and are recorded rather than buried
 
-This bundle passes every gate that has run except the easiness screen, which it
-fails by being solved too often. Submitting it again will reach that screen again.
+Keeping freshly written records and reclaimed records in separate open sectors,
+which is the standard way to make choosing the emptiest sector beat taking them
+in rotation, was built and measured. On a part this full it was worse on every
+count: 3.007 erases per 100 writes against 2.384, a slower mount, and round robin
+still within eight percent of it. It is not in the shipped design.
+
+Round robin reclaim passes the erase bar, at 2.562 against the reference's 2.384.
+That is a property of this workload rather than a gap in the bar, and
+`validation.md` says so instead of claiming victim selection as a crux the bar
+does not test. What the erase bar does separate is how much of a sector is thrown
+away per erase.

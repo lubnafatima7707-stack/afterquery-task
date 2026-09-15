@@ -8,7 +8,8 @@ parts whose geometry the agent never sees.
 
 ## Difficulty
 
-Between 490 and 700 blocks are live at once and they fill about seven pages in ten of the part, so
+Between 490 and 700 blocks are live at once, about half of every page on the part and close to
+three fifths of the pages a log can put records in once it holds sectors back to erase into, so
 nothing here fits anywhere convenient. The store has to run the whole part as a log and reclaim
 sectors out of it while the supply is being taken away, and five pieces of judgement have to be
 right at once, four of them pulling against each other.
@@ -46,7 +47,7 @@ punished from the other end: every write has to be acknowledged within 35 ticks,
 programs one record every eight ticks is at 2942 with 2858 writes never acknowledged. The mount is
 bounded at 8.0 ms of device time, which is what the per sector summaries are for; rebuilding the
 index from every page of every sector takes 27.875 ms. And endurance is measured rather than
-assumed, at 5.0 erases per 100 acknowledged writes: with the part seven tenths full, a reclaim
+assumed, at 5.0 erases per 100 acknowledged writes: with the part this full, a reclaim
 started while twenty pages of the open sector are still free reaches 8.082, and holding six sectors
 blank instead of two reaches 6.267 while failing nothing else.
 

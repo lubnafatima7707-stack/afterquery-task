@@ -29,11 +29,11 @@ UNITS = {
                "t_read_ms": 0.02, "t_program_ms": 0.35, "erase_ticks": 3},
 }
 
-# The live set is sized to fill about this much of the room a part really has.
-# That is what makes the choice of which sector to reclaim matter: at seven pages
-# in ten occupied, a sector picked without looking at how much of it is still
-# live costs several times the copying of one picked well, and the erase budget
-# is where that shows.
+# The live set is sized to fill this much of the room a part really has: the
+# pages of it that can hold a record, less the sectors a log has to keep blank to
+# erase into. That works out at about half of every page on the part, and it is
+# what puts the erase budget in play: the fuller the part, the more of a sector a
+# reclaim has to copy out before it can free it.
 TARGET_FILL = 0.70
 # Four sectors are held out of that sum. Two are the blank pool a log structured
 # part cannot run without: one to roll onto when the open sector fills and one

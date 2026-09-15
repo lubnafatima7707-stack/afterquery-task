@@ -16,7 +16,8 @@ the summary of each closed sector in generation order, and the pages of the one
 sector still open; a summary that a reset spoiled costs a scan of that sector
 alone.
 
-Reclaim. With the part about seven tenths full, what a reclaim costs is the
+Reclaim. With three fifths of the pages it can write to already live, what a
+reclaim costs is the
 copying and what it buys is the pages it frees, so the store keeps a live count
 per sector and takes the one holding the fewest live records. Copies are
 ordinary appends, so a reset in the middle of one leaves both the old record and
